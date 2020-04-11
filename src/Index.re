@@ -47,3 +47,11 @@ ReactDOMRe.render(
   <ReasonUsingJSUsingReason />,
   makeContainer("Reason Using JS Using Reason"),
 );
+
+ReactDOMRe.render(
+  <ClueComponent
+    categories=Clue.startingCategories
+    playerNames=Clue.startingPlayers
+  />,
+  makeContainer("Clue Game"),
+);
