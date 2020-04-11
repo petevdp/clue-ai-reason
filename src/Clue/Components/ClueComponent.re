@@ -9,5 +9,5 @@ let make =
   let categoryElements =
     Array.map(c => <CategoryComponent category=c />, categories);
 
-  <div> {ReasonReact.array(categoryElements)} </div>;
+  <div> <ul> {ReasonReact.array(categoryElements)} </ul> </div>;
 };

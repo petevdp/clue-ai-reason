@@ -2,14 +2,14 @@ let unzip2dArray = (arr: array(array('a))): array(array('a)) => {
   let minInnerLength =
     arr
     |> Array.map(s => Array.length(s))
-    |> Array.fold_left((min, b) => min > b ? b : min, 0);
+    |> Array.fold_left((min, b) => min > b ? b : min, max_int);
 
   let len = Array.length(arr);
 
   let out = Array.init(minInnerLength, _ => []);
 
-  for (i in 0 to minInnerLength) {
-    for (j in 0 to len) {
+  for (i in 0 to minInnerLength - 1) {
+    for (j in 0 to len - 1) {
       let currInner = arr[j];
       let value = currInner[i];
       out[i] = [value, ...out[i]];
