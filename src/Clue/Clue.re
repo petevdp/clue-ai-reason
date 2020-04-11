@@ -11,7 +11,7 @@ module ItemSet = {
 };
 
 module Guess = {
-  type t = array(item);
+  type t = StringMap.t(item);
   type normalOutcome =
     | Held(index)
     | Unheld;
@@ -24,18 +24,10 @@ module Guess = {
     | Normal(normalOutcome)
     | Final(finalOutcome);
 
-  let compare = (a: t, b: t) => {
-    let currCompare = ref(0);
-    let index = ref(0);
-    while (index^ < Array.length(a) && currCompare^ == 0) {
-      currCompare := String.compare(a[index^], b[index^]);
-    };
-
-    currCompare^;
+  let items = t => {
+    t |> StringMap.bindings |> List.map(((_, v)) => v);
   };
 };
-
-module GuessSet = Set.Make(Guess);
 
 module Player = {
   type t = {
@@ -141,7 +133,12 @@ module Turn = {
           currentPlayerIndex,
         )
       };
-    let guessItemSet = guess |> Array.to_list |> ItemSet.of_list;
+    let guessItemSet =
+      guess
+      |> StringMap.bindings
+      |> List.map(((_, item): (string, item)) => item)
+      |> ItemSet.of_list;
+
     let playerHoldingItem =
       players
       |> Array.to_list
@@ -169,12 +166,53 @@ module Category = {
     items: ItemSet.t,
   };
 
-  let getShuffledItemCombinations = (categories: array(t)) => {
-    categories
-    |> Array.map((a: t) =>
-         a.items |> ItemSet.elements |> Belt.List.shuffle |> Array.of_list
-       )
-    |> Utils.unzip2dArray;
+  let getShuffledItemCombinations = (categories: array(t)): array(Guess.t) => {
+    let map =
+      Array.fold_left(
+        (map, c: t) =>
+          StringMap.add(c.name, ItemSet.elements(c.items), map),
+        StringMap.empty,
+        categories,
+      );
+
+    let numCombinations: int =
+      StringMap.fold(
+        (_, itemList, minLength) => {
+          let len = List.length(itemList);
+          minLength > len ? len : minLength;
+        },
+        map,
+        max_int,
+      );
+
+    let shuffledTruncated =
+      StringMap.map(
+        (itemList: list(item)) => {
+          itemList
+          |> Array.of_list
+          |> Belt.Array.slice(~offset=0, ~len=numCombinations)
+          |> Belt.Array.shuffle
+        },
+        map,
+      );
+
+    let combinations = ref([]);
+
+    for (i in 0 to numCombinations - 1) {
+      let guess =
+        StringMap.fold(
+          (name, itemArr, guess) => {
+            let item = itemArr[i];
+            StringMap.add(name, item, guess);
+          },
+          shuffledTruncated,
+          StringMap.empty,
+        );
+
+      combinations := [guess, ...combinations^];
+    };
+
+    Array.of_list(combinations^);
   };
 
   let allItems = (categories: array(t)) => {

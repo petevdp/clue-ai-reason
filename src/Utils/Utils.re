@@ -19,4 +19,14 @@ let unzip2dArray = (arr: array(array('a))): array(array('a)) => {
   Array.map(list => list |> Array.of_list |> Belt.Array.reverse, out);
 };
 
-module StringMap = Map.Make(String);
+module StringMap = {
+  include Map.Make(String);
+
+  let values = t => {
+    t |> bindings |> List.map(((_, v)) => v);
+  };
+
+  let keys = t => {
+    t |> bindings |> List.map(((k, _)) => k);
+  };
+};

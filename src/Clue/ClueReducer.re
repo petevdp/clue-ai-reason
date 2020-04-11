@@ -26,7 +26,10 @@ let initialize =
   let otherItems: array(Clue.item) =
     Belt.Array.sliceToEnd(shuffledItemCombinations, 1)
     |> Array.fold_left(
-         (acc, combination) => Array.append(acc, combination),
+         (acc, guess) => {
+           let itemArr = guess |> Clue.Guess.items |> Array.of_list;
+           Array.append(acc, itemArr);
+         },
          [||],
        );
 
@@ -35,7 +38,6 @@ let initialize =
     |> Belt.Array.slice(~offset=0, ~len=2)
     |> Array.to_list
     |> Clue.ItemSet.of_list;
-  Js.log(hidden);
 
   let startingPlayers: array(Clue.Player.t) =
     playerNames

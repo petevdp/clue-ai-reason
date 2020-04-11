@@ -1,3 +1,4 @@
+open ComponentUtils;
 [@react.component]
 let make =
     (~categories: array(Clue.Category.t), ~playerNames: array(string)) => {
@@ -9,5 +10,13 @@ let make =
   let categoryElements =
     Array.map(c => <CategoryComponent category=c />, categories);
 
-  <div> <ul> {ReasonReact.array(categoryElements)} </ul> </div>;
+  let {answer}: ClueReducer.state = state;
+
+  <div>
+    <ul> {ReasonReact.array(categoryElements)} </ul>
+    <div>
+      <h4> {R.string("Answer: ")} </h4>
+      {<GuessComponent guess=answer />}
+    </div>
+  </div>;
 };
