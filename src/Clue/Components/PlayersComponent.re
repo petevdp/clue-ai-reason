@@ -3,7 +3,7 @@ open Clue.Player;
 open ComponentUtils;
 module PlayerComponent = {
   [@react.component]
-  let make = (~player: t, ~index) => {
+  let make = (~player: t, ~index, ~showHiddenInfo) => {
     let {name, lost, items} = player;
 
     let itemMessage = Array.join(", ", Clue.ItemSet.to_array(items));
@@ -12,16 +12,17 @@ module PlayerComponent = {
       <th scope="row"> {index |> string_of_int |> R.string} </th>
       <td> {R.string(name)} </td>
       <td> {R.string(string_of_bool(!lost))} </td>
-      <td> {R.string(itemMessage)} </td>
+      <td> {hide(showHiddenInfo, R.string(itemMessage))} </td>
     </tr>;
   };
 };
 
 [@react.component]
-let make = (~players: array(t)) => {
+let make = (~players: array(t), ~showHiddenInfo) => {
   let playerRows =
     Array.mapi(
-      (index, player) => <PlayerComponent key={player.name} player index />,
+      (index, player) =>
+        <PlayerComponent showHiddenInfo key={player.name} player index />,
       players,
     );
   let bodyContents =

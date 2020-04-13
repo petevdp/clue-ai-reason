@@ -8,6 +8,7 @@ type formChange =
 
 type action =
   | SubmitTurn
+  | ToggleHiddeninfo
   | TurnFormChange(formChange);
 
 let initialize =
@@ -57,7 +58,15 @@ let initialize =
 
   let turnForm = Clue.Turn.getEmptyForm(categories);
 
-  {answer, startingPlayers, categories, hidden, history: [], turnForm};
+  {
+    answer,
+    startingPlayers,
+    categories,
+    hidden,
+    history: [],
+    turnForm,
+    showHiddenInfo: false,
+  };
 };
 
 exception NotImplemented;
@@ -99,12 +108,18 @@ let turnFormSubmitReducer = (prevState: state): state => {
   {...prevState, turnForm, history: [turn, ...history]};
 };
 
+let toggleHiddenInfo = (prevState: state) => {
+  ...prevState,
+  showHiddenInfo: !prevState.showHiddenInfo,
+};
+
 let reducer = (prevState: state, action: action): state => {
   let phase = Clue.State.determinePhase(prevState);
   switch (phase, action) {
   | (Playing(_), SubmitTurn) => turnFormSubmitReducer(prevState)
   | (Playing(_), TurnFormChange(change)) =>
     turnFormChangeReducer(prevState, change)
+  | (_, ToggleHiddeninfo) => toggleHiddenInfo(prevState)
   | (Ended(_), _) => prevState
   };
 };

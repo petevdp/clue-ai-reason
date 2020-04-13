@@ -17,6 +17,20 @@ module PhaseAlertComponent = {
   };
 };
 
+module HiddenInfoToggle = {
+  [@react.component]
+  let make = (~showHiddenInfo, ~dispatch) => {
+    let (className, label) =
+      showHiddenInfo
+        ? ("btn btn-dark", "hide hidden info")
+        : ("btn btn-primary", "show hidden info");
+
+    let onClick = _ => dispatch(ClueReducer.ToggleHiddeninfo);
+
+    <button onClick className> {R.string(label)} </button>;
+  };
+};
+
 [@react.component]
 let make =
     (~categories: array(Clue.Category.t), ~playerNames: array(string)) => {
@@ -26,7 +40,7 @@ let make =
       ClueReducer.initialize(categories, playerNames),
     );
 
-  let {answer, hidden, history, turnForm}: ClueReducer.state = state;
+  let {answer, hidden, history, turnForm, showHiddenInfo}: ClueReducer.state = state;
 
   let hiddenItemElements =
     hidden
@@ -40,14 +54,15 @@ let make =
     <PhaseAlertComponent phase players />
     <GuessFormComponent dispatch categories turnForm />
     <TurnHistoryComponent history />
-    <PlayersComponent players />
+    <PlayersComponent players showHiddenInfo />
+    <HiddenInfoToggle dispatch showHiddenInfo />
     <div>
       <h4> {R.string("Answer: ")} </h4>
-      {<GuessComponent guess=answer />}
+      {hide(showHiddenInfo, <GuessComponent guess=answer />)}
     </div>
     <div>
       <h4> {R.string("Hidden")} </h4>
-      <ul> {R.array(hiddenItemElements)} </ul>
+      <ul> {hide(showHiddenInfo, R.array(hiddenItemElements))} </ul>
     </div>
   </article>;
 };

@@ -289,6 +289,7 @@ module State = {
     categories: array(Category.t),
     hidden: ItemSet.t,
     turnForm: Turn.form,
+    showHiddenInfo: bool,
   };
 
   type phase =
