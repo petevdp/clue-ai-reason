@@ -8,6 +8,8 @@ module ItemSet = {
   let randomItem = t => {
     t |> elements |> Belt.List.shuffle |> List.hd;
   };
+
+  let to_array = t => t |> elements |> Array.of_list;
 };
 
 module Guess = {
@@ -36,22 +38,6 @@ module Player = {
     items: ItemSet.t,
   };
 
-  let nextPlayerIndex = (players: array(t), currentIndex: index) => {
-    let offset = ref(1);
-    let out = ref(-1);
-
-    while (out^ == (-1) || offset^ < Array.length(players)) {
-      let index = (currentIndex + offset^) mod Array.length(players);
-      let player = players[index];
-      if (!player.lost) {
-        out := index;
-      };
-      offset := offset^ + 1;
-    };
-
-    out^;
-  };
-
   let activePlayerIndexes = (players: array(t)) => {
     players
     |> Array.mapi((i, p) => (i, p))
@@ -65,105 +51,17 @@ module Player = {
     | FinalAction(Guess.t);
 };
 
-module Turn = {
-  type normalTurn = {
-    currentPlayerIndex: index,
-    guess: Guess.t,
-    players: array(Player.t),
-    outcome: Guess.normalOutcome,
-  };
-
-  type finalTurn = {
-    currentPlayerIndex: index,
-    guess: Guess.t,
-    players: array(Player.t),
-    outcome: Guess.finalOutcome,
-  };
-
-  type t =
-    | NormalTurn(normalTurn)
-    | FinalTurn(finalTurn);
-
-  let isGameEndingTurn = t => {
-    switch (t) {
-    | NormalTurn(_) => false
-    | FinalTurn(turn) =>
-      let playersAlive =
-        turn.players
-        |> Array.to_list
-        |> List.filter((player: Player.t) => !player.lost)
-        |> List.length;
-
-      let gameOverIfLose = playersAlive == 2;
-      switch (turn.outcome, gameOverIfLose) {
-      | (Win, _)
-      | (Lose, true) => true
-      | (Lose, false) => false
-      };
-    };
-  };
-  let performFinalTurn =
-      (answer: Guess.t, history: list(t), guess): finalTurn => {
-    let (players, lastTurnPlayerIndex) =
-      switch (List.hd(history)) {
-      | NormalTurn({players, currentPlayerIndex}) => (
-          players,
-          currentPlayerIndex,
-        )
-      | FinalTurn({players, currentPlayerIndex}) => (
-          players,
-          currentPlayerIndex,
-        )
-      };
-    let outcome = guess == answer ? Guess.Win : Guess.Lose;
-    let currentPlayerIndex =
-      Player.nextPlayerIndex(players, lastTurnPlayerIndex);
-    {outcome, players, guess, currentPlayerIndex};
-  };
-
-  let performNormalTurn = (history: list(t), guess: Guess.t): normalTurn => {
-    let (players, lastTurnPlayerIndex) =
-      switch (List.hd(history)) {
-      | NormalTurn({players, currentPlayerIndex}) => (
-          players,
-          currentPlayerIndex,
-        )
-      | FinalTurn({players, currentPlayerIndex}) => (
-          players,
-          currentPlayerIndex,
-        )
-      };
-    let guessItemSet =
-      guess
-      |> StringMap.bindings
-      |> List.map(((_, item): (string, item)) => item)
-      |> ItemSet.of_list;
-
-    let playerHoldingItem =
-      players
-      |> Array.to_list
-      |> List.mapi((i, p) => (i, p))
-      |> List.find_opt(((_, p: Player.t)) => {
-           let heldItems = p.items |> ItemSet.inter(guessItemSet);
-           ItemSet.cardinal(heldItems) > 0;
-         });
-
-    let outcome =
-      switch (playerHoldingItem) {
-      | Some((index, _)) => Guess.Held(index)
-      | None => Unheld
-      };
-    let currentPlayerIndex =
-      Player.nextPlayerIndex(players, lastTurnPlayerIndex);
-
-    {outcome, players, guess, currentPlayerIndex};
-  };
-};
-
 module Category = {
   type t = {
     name: string,
     items: ItemSet.t,
+  };
+
+  let getByName = (name: string, arr: array(t)) => {
+    switch (Belt.Array.getBy(arr, c => c.name == name)) {
+    | Some(category) => category
+    | None => raise(NotFound)
+    };
   };
 
   let getShuffledItemCombinations = (categories: array(t)): array(Guess.t) => {
@@ -215,6 +113,14 @@ module Category = {
     Array.of_list(combinations^);
   };
 
+  let to_map = t => {
+    Array.fold_left(
+      (map, {name, items}) => {StringMap.add(name, items, map)},
+      StringMap.empty,
+      t,
+    );
+  };
+
   let allItems = (categories: array(t)) => {
     Array.fold_left(
       (set, category) => ItemSet.union(set, category.items),
@@ -223,6 +129,188 @@ module Category = {
     );
   };
 };
+
+module Turn = {
+  type t = {
+    playerIndex: index,
+    guess: Guess.t,
+    players: array(Player.t),
+    outcome: Guess.outcome,
+  };
+
+  type form = {
+    values: StringMap.t(option(item)),
+    final: bool,
+  };
+
+  let winning = (t: t) =>
+    switch (t.outcome) {
+    | Guess.Final(Guess.Win) => true
+    | _ => false
+    };
+
+  let getEmptyForm = categories => {
+    values: categories |> Category.to_map |> StringMap.map(_ => None),
+    final: false,
+  };
+
+  let canFormBeSubmitted = ({values}) => {
+    StringMap.values(values) |> List.for_all(v => v != None);
+  };
+
+  exception InvalidGuessForm;
+
+  let getGuessFromForm = ({values}) => {
+    StringMap.map(
+      value =>
+        switch (value) {
+        | Some(item) => item
+        | None => raise(InvalidGuessForm)
+        },
+      values,
+    );
+  };
+
+  let last = (history: list(t)) => Belt.List.head(history);
+
+  let currentPlayers = (history, startingPlayers) =>
+    switch (last(history)) {
+    | None => startingPlayers
+    | Some({players}) => players
+    };
+
+  exception NoPlayersLeft;
+
+  let currentPlayerIndex = history => {
+    switch (last(history)) {
+    | None => 0
+    | Some({playerIndex, players}) =>
+      let activeIndexes = Player.activePlayerIndexes(players);
+      switch (activeIndexes) {
+      | [] => raise(NoPlayersLeft)
+      | activeIndexes =>
+        let index = ref((playerIndex + 1) mod Array.length(players));
+        while (!List.mem(index^, activeIndexes)) {
+          index := (index^ + 1) mod Array.length(players);
+        };
+
+        index^;
+      };
+    };
+  };
+
+  let isGameEndingTurn = t => {
+    switch (t.outcome) {
+    | Normal(_) => false
+    | Final(outcome) =>
+      let playersAlive =
+        t.players
+        |> Array.to_list
+        |> List.filter((player: Player.t) => !player.lost)
+        |> List.length;
+
+      let gameOverIfLose = playersAlive == 2;
+      switch (outcome, gameOverIfLose) {
+      | (Win, _)
+      | (Lose, true) => true
+      | (Lose, false) => false
+      };
+    };
+  };
+
+  let performFinalTurn =
+      (
+        answer: Guess.t,
+        history: list(t),
+        startingPlayers: array(Player.t),
+        guess: Guess.t,
+      )
+      : t => {
+    let players = currentPlayers(history, startingPlayers);
+    let outcome =
+      Guess.Final(
+        StringMap.values(guess) == StringMap.values(answer)
+          ? Guess.Win : Guess.Lose,
+      );
+    {outcome, players, guess, playerIndex: currentPlayerIndex(history)};
+  };
+
+  let performNormalTurn =
+      (history: list(t), startingPlayers: array(Player.t), guess: Guess.t)
+      : t => {
+    let players = currentPlayers(history, startingPlayers);
+
+    let guessItemSet =
+      guess
+      |> StringMap.bindings
+      |> List.map(((_, item): (string, item)) => item)
+      |> ItemSet.of_list;
+
+    let playerHoldingItem =
+      players
+      |> Array.to_list
+      |> List.mapi((i, p) => (i, p))
+      |> List.find_opt(((_, p: Player.t)) => {
+           let heldItems = p.items |> ItemSet.inter(guessItemSet);
+           ItemSet.cardinal(heldItems) > 0;
+         });
+
+    let outcome =
+      switch (playerHoldingItem) {
+      | Some((index, _)) => Guess.Normal(Guess.Held(index))
+      | None => Guess.Normal(Unheld)
+      };
+
+    {outcome, players, guess, playerIndex: currentPlayerIndex(history)};
+  };
+
+  let performTurn =
+      (
+        answer: Guess.t,
+        history: list(t),
+        startingPlayers: array(Player.t),
+        playerAction: Player.action,
+      )
+      : t => {
+    switch (playerAction) {
+    | Player.NormalAction(guess) =>
+      performNormalTurn(history, startingPlayers, guess)
+    | Player.FinalAction(guess) =>
+      performFinalTurn(answer, history, startingPlayers, guess)
+    };
+  };
+};
+
+module State = {
+  type t = {
+    history: list(Turn.t),
+    startingPlayers: array(Player.t),
+    answer: Guess.t,
+    categories: array(Category.t),
+    hidden: ItemSet.t,
+    turnForm: Turn.form,
+  };
+
+  type phase =
+    | Playing(index)
+    | Ended;
+
+  let currentPlayers = t => Turn.currentPlayers(t.history, t.startingPlayers);
+
+  let determinePhase = t => {
+    let players = currentPlayers(t);
+    let lastTurn = Turn.last(t.history);
+    let currentPlayerIndex = Turn.currentPlayerIndex(t.history);
+    switch (Player.activePlayerIndexes(players), lastTurn) {
+    | ([], _) => Ended
+    | (_, Some(lastTurn)) =>
+      Turn.winning(lastTurn) ? Ended : Playing(currentPlayerIndex)
+    | (_, None) => Playing(currentPlayerIndex)
+    };
+  };
+};
+
+type state = State.t;
 
 let startingPlayers = [|"alice", "bob", "carol", "dan"|];
 
@@ -235,8 +323,8 @@ let startingCategories: array(Category.t) = [|
         "living room",
         "shed",
         "driveway",
-        "master bedroom",
-        "bathroom",
+        // "master bedroom",
+        // "bathroom",
       ]),
   },
   {

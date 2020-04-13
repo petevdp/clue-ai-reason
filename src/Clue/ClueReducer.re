@@ -1,19 +1,14 @@
-type state = {
-  history: list(Clue.Turn.t),
-  startingPlayers: array(Clue.Player.t),
-  answer: Clue.Guess.t,
-  categories: array(Clue.Category.t),
-  hidden: Clue.ItemSet.t,
-};
+open Utils;
+
+type state = Clue.state;
+
+type formChange =
+  | ItemValue((string, string))
+  | ToggleFinal;
 
 type action =
-  | PlayerAction(Clue.Player.action);
-// | FinalGuess
-// | Rewind(int);
-
-type phase =
-  | Playing
-  | Ended;
+  | SubmitTurn
+  | TurnFormChange(formChange);
 
 let initialize =
     (categories: array(Clue.Category.t), playerNames: array(string)): state => {
@@ -60,37 +55,56 @@ let initialize =
     },
   );
 
-  {categories, history: [], startingPlayers, answer, hidden};
+  let turnForm = Clue.Turn.getEmptyForm(categories);
+
+  {answer, startingPlayers, categories, hidden, history: [], turnForm};
 };
 
 exception NotImplemented;
 
-let determinePhase = (history): phase => {
-  switch (Belt.List.head(history)) {
-  | None => Playing
-  | Some(turn) => Clue.Turn.isGameEndingTurn(turn) ? Ended : Playing
-  };
-};
-
 let playerActionReducer =
     (prevState: state, playerAction: Clue.Player.action): state => {
-  let {answer, history} = prevState;
+  let {answer, history, startingPlayers}: state = prevState;
   let turn =
-    switch (playerAction) {
-    | NormalAction(guess) =>
-      Clue.Turn.NormalTurn(Clue.Turn.performNormalTurn(history, guess))
-    | FinalAction(guess) =>
-      Clue.Turn.FinalTurn(Clue.Turn.performFinalTurn(answer, history, guess))
-    };
-
+    Clue.Turn.performTurn(answer, history, startingPlayers, playerAction);
   {...prevState, history: [turn, ...prevState.history]};
 };
 
+let turnFormChangeReducer = (prevState: state, change: formChange): state => {
+  let {turnForm}: state = prevState;
+
+  let turnForm =
+    switch (change) {
+    | ItemValue((key, value)) => {
+        ...turnForm,
+        values: StringMap.add(key, Some(value), turnForm.values),
+      }
+    | ToggleFinal => {...turnForm, final: !turnForm.final}
+    };
+
+  {...prevState, turnForm};
+};
+
+let turnFormSubmitReducer = (prevState: state): state => {
+  let {turnForm, answer, history, startingPlayers}: state = prevState;
+  let guess = Clue.Turn.getGuessFromForm(turnForm);
+
+  let turn =
+    turnForm.final
+      ? Clue.Turn.performFinalTurn(answer, history, startingPlayers, guess)
+      : Clue.Turn.performNormalTurn(history, startingPlayers, guess);
+
+  let turnForm = Clue.Turn.getEmptyForm(prevState.categories);
+
+  {...prevState, turnForm, history: [turn, ...history]};
+};
+
 let reducer = (prevState: state, action: action): state => {
-  let phase = determinePhase(prevState.history);
+  let phase = Clue.State.determinePhase(prevState);
   switch (phase, action) {
-  | (Playing, PlayerAction(action)) =>
-    playerActionReducer(prevState, action)
-  | (Ended, PlayerAction(_)) => prevState
+  | (Playing(_), SubmitTurn) => turnFormSubmitReducer(prevState)
+  | (Playing(_), TurnFormChange(change)) =>
+    turnFormChangeReducer(prevState, change)
+  | (Ended, _) => prevState
   };
 };

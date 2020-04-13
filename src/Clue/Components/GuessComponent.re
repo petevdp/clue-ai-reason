@@ -9,11 +9,9 @@ let make = (~guess: Clue.Guess.t) => {
     |> Array.of_list
     |> Array.map(((categoryName, item)) => {
          <li key=categoryName>
-           <pair>
-             <key> {R.string(categoryName)} </key>
-             {R.string(" : ")}
-             <value> {R.string(item)} </value>
-           </pair>
+           <strong> {R.string(categoryName)} </strong>
+           {R.string(" : ")}
+           {R.string(item)}
          </li>
        });
 

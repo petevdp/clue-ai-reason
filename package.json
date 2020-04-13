@@ -17,7 +17,10 @@
   "license": "MIT",
   "dependencies": {
     "bs-css": "^12.1.0",
+    "bs-css-emotion": "^1.1.0",
+    "gentype": "^3.20.0",
     "react": "^16.8.1",
+    "react-autosuggest": "^10.0.0",
     "react-dom": "^16.8.1",
     "reason-react": ">=0.7.0"
   },

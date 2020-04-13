@@ -30,3 +30,26 @@ module StringMap = {
     t |> bindings |> List.map(((k, _)) => k);
   };
 };
+
+module Array = {
+  include Array;
+  let join = (separator: string, arr: array(string)) => {
+    Array.fold_left(
+      (acc, elt) =>
+        switch (acc) {
+        | "" => elt
+        | str => str ++ separator ++ elt
+        },
+      "",
+      arr,
+    );
+  };
+};
+
+module List = {
+  include List;
+
+  let revIndex = (index, t) => List.length(t) - index;
+};
+
+exception NotFound;
