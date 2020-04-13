@@ -293,18 +293,21 @@ module State = {
 
   type phase =
     | Playing(index)
-    | Ended;
+    | Ended(index);
 
   let currentPlayers = t => Turn.currentPlayers(t.history, t.startingPlayers);
 
+  exception NotEnoughPlayers;
   let determinePhase = t => {
     let players = currentPlayers(t);
     let lastTurn = Turn.last(t.history);
     let currentPlayerIndex = Turn.currentPlayerIndex(t.history);
     switch (Player.activePlayerIndexes(players), lastTurn) {
-    | ([], _) => Ended
+    | ([], _) => raise(NotEnoughPlayers)
+    | ([lastPlayerIndex], _) => Ended(lastPlayerIndex)
     | (_, Some(lastTurn)) =>
-      Turn.winning(lastTurn) ? Ended : Playing(currentPlayerIndex)
+      Turn.winning(lastTurn)
+        ? Ended(lastTurn.playerIndex) : Playing(currentPlayerIndex)
     | (_, None) => Playing(currentPlayerIndex)
     };
   };

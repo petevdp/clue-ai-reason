@@ -105,6 +105,6 @@ let reducer = (prevState: state, action: action): state => {
   | (Playing(_), SubmitTurn) => turnFormSubmitReducer(prevState)
   | (Playing(_), TurnFormChange(change)) =>
     turnFormChangeReducer(prevState, change)
-  | (Ended, _) => prevState
+  | (Ended(_), _) => prevState
   };
 };
