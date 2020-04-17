@@ -58,11 +58,11 @@ let make =
     <HiddenInfoToggle dispatch showHiddenInfo />
     <div>
       <h4> {R.string("Answer: ")} </h4>
-      {hide(showHiddenInfo, <GuessComponent guess=answer />)}
+      {trueElseHide(showHiddenInfo, <GuessComponent guess=answer />)}
     </div>
     <div>
       <h4> {R.string("Hidden")} </h4>
-      <ul> {hide(showHiddenInfo, R.array(hiddenItemElements))} </ul>
+      <ul> {trueElseHide(showHiddenInfo, R.array(hiddenItemElements))} </ul>
     </div>
   </article>;
 };

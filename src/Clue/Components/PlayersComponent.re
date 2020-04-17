@@ -12,7 +12,7 @@ module PlayerComponent = {
       <th scope="row"> {index |> string_of_int |> R.string} </th>
       <td> {R.string(name)} </td>
       <td> {R.string(string_of_bool(!lost))} </td>
-      <td> {hide(showHiddenInfo, R.string(itemMessage))} </td>
+      <td> {trueElseHide(showHiddenInfo, R.string(itemMessage))} </td>
     </tr>;
   };
 };

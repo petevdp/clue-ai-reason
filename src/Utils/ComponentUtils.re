@@ -1,5 +1,5 @@
 module R = React;
 
-let hide = (show, element) =>
+let trueElseHide = (show, element) =>
   show
     ? element : <span className="font-italic"> {R.string("hidden")} </span>;
