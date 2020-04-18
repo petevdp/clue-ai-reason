@@ -3,26 +3,23 @@ open Clue.Player;
 open ComponentUtils;
 module PlayerComponent = {
   [@react.component]
-  let make = (~player: t, ~index, ~showHiddenInfo) => {
-    let {name, lost, items} = player;
-
-    let itemMessage = Array.join(", ", Clue.ItemSet.to_array(items));
+  let make = (~player: t, ~index) => {
+    let {name, lost} = player;
 
     <tr>
       <th scope="row"> {index |> string_of_int |> R.string} </th>
       <td> {R.string(name)} </td>
       <td> {R.string(string_of_bool(!lost))} </td>
-      <td> {trueElseHide(showHiddenInfo, R.string(itemMessage))} </td>
+      <td> {R.string(string_of_int(numItems(player)))} </td>
     </tr>;
   };
 };
 
 [@react.component]
-let make = (~players: array(t), ~showHiddenInfo) => {
+let make = (~players: array(t)) => {
   let playerRows =
     Array.mapi(
-      (index, player) =>
-        <PlayerComponent showHiddenInfo key={player.name} player index />,
+      (index, player) => <PlayerComponent key={player.name} player index />,
       players,
     );
   let bodyContents =
@@ -37,7 +34,7 @@ let make = (~players: array(t), ~showHiddenInfo) => {
           <th scope="col"> {R.string("#")} </th>
           <th scope="col"> {R.string("Name")} </th>
           <th scope="col"> {R.string("Playing")} </th>
-          <th scope="col"> {R.string("Items")} </th>
+          <th scope="col"> {R.string("# items")} </th>
         </tr>
       </thead>
       <tbody> bodyContents </tbody>

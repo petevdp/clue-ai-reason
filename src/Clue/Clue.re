@@ -1,41 +1,96 @@
 open GlobalTypes;
 open Utils;
 
-type item = string;
+type location = string;
+type weapon = string;
+type suspect = string;
+module Item = {
+  type itemType =
+    | Location
+    | Weapon
+    | Suspect;
+  type t = {
+    itemType,
+    name: string,
+  };
+  let compare = (a, b) => {
+    String.compare(a.name, b.name);
+  };
+};
+type item = Item.t;
 
-module ItemSet = {
-  include Set.Make(String);
-  let randomItem = t => {
-    t |> elements |> Belt.List.shuffle |> List.hd;
+module ItemSet = Set(Item);
+module Guess = {
+  type t = {
+    location,
+    weapon,
+    suspect,
   };
 
-  let to_array = t => t |> elements |> Array.of_list;
-};
+  type form = {
+    locationChoice: option(location),
+    weaponChoice: option(weapon),
+    suspectChoice: option(suspect),
+  };
 
-module Guess = {
-  type t = StringMap.t(item);
-  type normalOutcome =
-    | Held(index)
-    | Unheld;
+  let toStringMap = t =>
+    StringMap.(
+      empty
+      |> add("location", t.location)
+      |> add("weapon", t.weapon)
+      |> add("suspect", t.suspect)
+    );
 
-  type finalOutcome =
-    | Win
-    | Lose;
+  let emptyForm = {
+    locationChoice: None,
+    weaponChoice: None,
+    suspectChoice: None,
+  };
 
-  type outcome =
-    | Normal(normalOutcome)
-    | Final(finalOutcome);
+  let canFormBeSubmitted = form =>
+    switch (form.locationChoice, form.weaponChoice, form.suspectChoice) {
+    | (Some(_), Some(_), Some(_)) => true
+    | _ => false
+    };
 
   let items = t => {
-    t |> StringMap.bindings |> List.map(((_, v)) => v);
+    Item.(
+      ItemSet.(
+        empty
+        |> add({name: t.location, itemType: Location})
+        |> add({name: t.weapon, itemType: Weapon})
+        |> add({name: t.suspect, itemType: Suspect})
+      )
+    );
   };
 };
 
+type guess = Guess.t;
+
 module Player = {
+  type playerItems =
+    | Controlled(ItemSet.t)
+    | Uncontrolled(int);
+
   type t = {
     name: string,
     lost: bool,
-    items: ItemSet.t,
+    items: playerItems,
+  };
+
+  type specifiedPlayer = (string, playerItems);
+
+  let initPlayer = ((name, playerItems)) => {
+    name,
+    lost: false,
+    items: playerItems,
+  };
+
+  let numItems = ({items}) => {
+    switch (items) {
+    | Controlled(set) => ItemSet.cardinal(set)
+    | Uncontrolled(num) => num
+    };
   };
 
   let activePlayerIndexes = (players: array(t)) => {
@@ -53,8 +108,9 @@ module Player = {
 
 module Category = {
   type t = {
+    itemType: Item.itemType,
     name: string,
-    items: ItemSet.t,
+    itemNames: StringSet.t,
   };
 
   let getByName = (name: string, arr: array(t)) => {
@@ -64,112 +120,110 @@ module Category = {
     };
   };
 
-  let getShuffledItemCombinations = (categories: array(t)): array(Guess.t) => {
-    let map =
-      Array.fold_left(
-        (map, c: t) =>
-          StringMap.add(c.name, ItemSet.elements(c.items), map),
-        StringMap.empty,
-        categories,
-      );
-
-    let numCombinations: int =
-      StringMap.fold(
-        (_, itemList, minLength) => {
-          let len = List.length(itemList);
-          minLength > len ? len : minLength;
-        },
-        map,
-        max_int,
-      );
-
-    let shuffledTruncated =
-      StringMap.map(
-        (itemList: list(item)) => {
-          itemList
-          |> Array.of_list
-          |> Belt.Array.slice(~offset=0, ~len=numCombinations)
-          |> Belt.Array.shuffle
-        },
-        map,
-      );
-
-    let combinations = ref([]);
-
-    for (i in 0 to numCombinations - 1) {
-      let guess =
-        StringMap.fold(
-          (name, itemArr, guess) => {
-            let item = itemArr[i];
-            StringMap.add(name, item, guess);
-          },
-          shuffledTruncated,
-          StringMap.empty,
-        );
-
-      combinations := [guess, ...combinations^];
-    };
-
-    Array.of_list(combinations^);
-  };
-
   let to_map = t => {
     Array.fold_left(
-      (map, {name, items}) => {StringMap.add(name, items, map)},
+      (map, {name, itemNames}) => {StringMap.add(name, itemNames, map)},
       StringMap.empty,
       t,
     );
   };
+  let itemfromCategoryAndName = ({itemType}, name): item => {
+    name,
+    itemType,
+  };
 
   let allItems = (categories: array(t)) => {
     Array.fold_left(
-      (set, category) => ItemSet.union(set, category.items),
+      (set, {itemType, itemNames}) => {
+        StringSet.fold(
+          (name, itemSet) => {ItemSet.add({name, itemType}, itemSet)},
+          itemNames,
+          set,
+        )
+      },
       ItemSet.empty,
       categories,
     );
   };
 };
 
-module Turn = {
+module Accusation = {
   type t = {
     playerIndex: index,
     guess: Guess.t,
-    players: array(Player.t),
-    outcome: Guess.outcome,
+    final: bool,
   };
-
   type form = {
-    values: StringMap.t(option(item)),
+    guessChoice: Guess.form,
     final: bool,
   };
 
+  type formChange =
+    | ItemValue(Item.t)
+    | ToggleFinal;
+
+  let emptyForm = {guessChoice: Guess.emptyForm, final: false};
+
+  let accusationFromForm = (form, playerIndex: index) =>
+    switch (form.guessChoice) {
+    | {
+        locationChoice: Some(location),
+        weaponChoice: Some(weapon),
+        suspectChoice: Some(suspect),
+      } =>
+      Some({
+        playerIndex,
+        final: form.final,
+        guess: {
+          location,
+          weapon,
+          suspect,
+        },
+      })
+    | _ => None
+    };
+};
+type accusation = Accusation.t;
+
+module Turn = {
+  type normalOutcome =
+    | Held(index)
+    | Unheld;
+
+  type finalOutcome =
+    | Win
+    | Lose;
+
+  type outcome =
+    | Normal(normalOutcome)
+    | Final(finalOutcome);
+
+  type normalOutcomeForm = option(normalOutcome);
+  type finalOutcomeForm = option(finalOutcome);
+  type turnOutcomeForm =
+    | NormalOutcomeForm(normalOutcomeForm)
+    | FinalOutcomeForm(finalOutcomeForm);
+
+  type turnPhase =
+    | PendingAccusation(Accusation.form)
+    | PendingTurnOutcome(accusation);
+  type t = {
+    guess,
+    playerIndex: index,
+    players: array(Player.t),
+    outcome,
+  };
+
+  let startingPhase = Some(PendingAccusation(Accusation.emptyForm));
+  let startingPendingOutcome = accusation => PendingTurnOutcome(accusation);
+
   let winning = (t: t) =>
     switch (t.outcome) {
-    | Guess.Final(Guess.Win) => true
+    | Final(Win) => true
     | _ => false
     };
 
-  let getEmptyForm = categories => {
-    values: categories |> Category.to_map |> StringMap.map(_ => None),
-    final: false,
-  };
-
-  let canFormBeSubmitted = ({values}) => {
-    StringMap.values(values) |> List.for_all(v => v != None);
-  };
-
   exception InvalidGuessForm;
-
-  let getGuessFromForm = ({values}) => {
-    StringMap.map(
-      value =>
-        switch (value) {
-        | Some(item) => item
-        | None => raise(InvalidGuessForm)
-        },
-      values,
-    );
-  };
 
   let last = (history: list(t)) => Belt.List.head(history);
 
@@ -199,6 +253,7 @@ module Turn = {
     };
   };
 
+  exception IncompleteTurn;
   let isGameEndingTurn = t => {
     switch (t.outcome) {
     | Normal(_) => false
@@ -217,89 +272,25 @@ module Turn = {
       };
     };
   };
-
-  let performFinalTurn =
-      (
-        answer: Guess.t,
-        history: list(t),
-        startingPlayers: array(Player.t),
-        guess: Guess.t,
-      )
-      : t => {
-    let players = currentPlayers(history, startingPlayers);
-    let outcome =
-      Guess.Final(
-        StringMap.values(guess) == StringMap.values(answer)
-          ? Guess.Win : Guess.Lose,
-      );
-    {outcome, players, guess, playerIndex: currentPlayerIndex(history)};
-  };
-
-  let performNormalTurn =
-      (history: list(t), startingPlayers: array(Player.t), guess: Guess.t)
-      : t => {
-    let players = currentPlayers(history, startingPlayers);
-
-    let guessItemSet =
-      guess
-      |> StringMap.bindings
-      |> List.map(((_, item): (string, item)) => item)
-      |> ItemSet.of_list;
-
-    let playerHoldingItem =
-      players
-      |> Array.to_list
-      |> List.mapi((i, p) => (i, p))
-      |> List.find_opt(((_, p: Player.t)) => {
-           let heldItems = p.items |> ItemSet.inter(guessItemSet);
-           ItemSet.cardinal(heldItems) > 0;
-         });
-
-    let outcome =
-      switch (playerHoldingItem) {
-      | Some((index, _)) => Guess.Normal(Guess.Held(index))
-      | None => Guess.Normal(Unheld)
-      };
-
-    {outcome, players, guess, playerIndex: currentPlayerIndex(history)};
-  };
-
-  let performTurn =
-      (
-        answer: Guess.t,
-        history: list(t),
-        startingPlayers: array(Player.t),
-        playerAction: Player.action,
-      )
-      : t => {
-    switch (playerAction) {
-    | Player.NormalAction(guess) =>
-      performNormalTurn(history, startingPlayers, guess)
-    | Player.FinalAction(guess) =>
-      performFinalTurn(answer, history, startingPlayers, guess)
-    };
-  };
 };
 
 module State = {
   type t = {
     history: list(Turn.t),
+    turnPhase: option(Turn.turnPhase),
     startingPlayers: array(Player.t),
-    answer: Guess.t,
     categories: array(Category.t),
-    hidden: ItemSet.t,
-    turnForm: Turn.form,
-    showHiddenInfo: bool,
+    controlledPlayerIndex: index,
   };
 
-  type phase =
+  type gamePhase =
     | Playing(index)
     | Ended(index);
 
   let currentPlayers = t => Turn.currentPlayers(t.history, t.startingPlayers);
 
   exception NotEnoughPlayers;
-  let determinePhase = t => {
+  let determineGamePhase = t => {
     let players = currentPlayers(t);
     let lastTurn = Turn.last(t.history);
     let currentPlayerIndex = Turn.currentPlayerIndex(t.history);
@@ -312,17 +303,66 @@ module State = {
     | (_, None) => Playing(currentPlayerIndex)
     };
   };
+
+  let initialize =
+      (
+        categories: array(Category.t),
+        specifiedPlayers: array(Player.specifiedPlayer),
+      )
+      : t => {
+    let startingPlayers = Array.map(Player.initPlayer, specifiedPlayers);
+
+    let (controlledPlayerIndex, _) =
+      startingPlayers
+      |> Array.to_list
+      |> List.mapi((i, p) => (i, p))
+      |> List.find(((_, p): (int, Player.t)) =>
+           switch (p.items) {
+           | Player.Controlled(_) => true
+           | Player.Uncontrolled(_) => false
+           }
+         );
+
+    {
+      startingPlayers,
+      turnPhase: Turn.startingPhase,
+      categories,
+      history: [],
+      controlledPlayerIndex,
+    };
+  };
+};
+
+module Engine = {
+  type reducedState = {
+    history: list(Turn.t),
+    startingPlayers: array(Player.t),
+    categories: array(Category.t),
+  };
+  type t = reducedState => Guess.t;
 };
 
 type state = State.t;
 
-let startingPlayers = [|"alice", "bob", "carol", "dan"|];
+let controlledPlayerName = "alice";
+let controlledPlayerItems = ItemSet.empty;
+
+let startingPlayers =
+  [|("alice", 4), ("bob", 4), ("carol", 4), ("dan", 4)|]
+  |> Array.map(((name, numItems)) => {
+       let playerItems =
+         name == controlledPlayerName
+           ? Player.Controlled(controlledPlayerItems)
+           : Player.Uncontrolled(numItems);
+       (name, playerItems);
+     });
 
 let startingCategories: array(Category.t) = [|
   {
     name: "locations",
-    items:
-      ItemSet.of_list([
+    itemType: Location,
+    itemNames:
+      StringSet.of_list([
         "kitchen",
         "living room",
         "shed",
@@ -333,11 +373,14 @@ let startingCategories: array(Category.t) = [|
   },
   {
     name: "weapons",
-    items: ItemSet.of_list(["hammer", "chainsaw", "butcher knife", "pencil"]),
+    itemType: Weapon,
+    itemNames:
+      StringSet.of_list(["hammer", "chainsaw", "butcher knife", "pencil"]),
   },
   {
     name: "suspects",
-    items:
-      ItemSet.of_list(["dirty harry", "cool hand luke", "ted cruz", "OJ"]),
+    itemType: Suspect,
+    itemNames:
+      StringSet.of_list(["dirty harry", "cool hand luke", "ted cruz", "OJ"]),
   },
 |];

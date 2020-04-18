@@ -52,4 +52,16 @@ module List = {
   let revIndex = (index, t) => List.length(t) - index;
 };
 
+module Set = (Type: Set.OrderedType) => {
+  include Set.Make(Type);
+  let randomItem = t => {
+    t |> elements |> Belt.List.shuffle |> List.hd;
+  };
+
+  let to_array = t => t |> elements |> Array.of_list;
+};
+
+module StringSet = Set(String);
+
 exception NotFound;
+exception NotImplemented;

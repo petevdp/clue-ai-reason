@@ -1,10 +1,9 @@
+open Utils;
 open ComponentUtils;
 module Style = {
   open Css;
 
   let buttonList = style([display(`flex), flexDirection(column)]);
-  let unhighlightedButton = style([]);
-  let highlightedButton = style([backgroundColor(green)]);
 
   let button = selected => {
     let base = "list-group-item list-group-item-action";
@@ -16,26 +15,27 @@ type category = Clue.Category.t;
 
 [@react.component]
 let make = (~category, ~selectedItem, ~dispatch) => {
-  let {items, name}: category = category;
+  let {itemNames}: category = category;
   let itemElements =
-    items
-    |> Clue.ItemSet.to_array
-    |> Array.map(item => {
+    itemNames
+    |> StringSet.to_array
+    |> Array.map(itemName => {
+         let item = Clue.Category.itemfromCategoryAndName(category, itemName);
          let onClick = e => {
            ReactEvent.Mouse.preventDefault(e);
-           dispatch(
-             ClueReducer.TurnFormChange(ClueReducer.ItemValue((name, item))),
+           Clue.Accusation.(
+             dispatch(ClueReducer.AccusationFormChange(ItemValue(item)))
            );
          };
 
          let isSelected =
            switch (selectedItem) {
            | None => false
-           | Some(value) => value == item
+           | Some(value) => value == itemName
            };
 
-         <a key=item onClick className={Style.button(isSelected)}>
-           {R.string(item)}
+         <a key=itemName onClick className={Style.button(isSelected)}>
+           {R.string(itemName)}
          </a>;
        });
 

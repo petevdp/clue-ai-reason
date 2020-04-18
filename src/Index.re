@@ -7,7 +7,7 @@
 ReactDOMRe.render(
   <ClueComponent
     categories=Clue.startingCategories
-    playerNames=Clue.startingPlayers
+    specifiedPlayers=Clue.startingPlayers
   />,
   document##getElementById("react-root"),
 );

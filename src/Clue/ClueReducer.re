@@ -1,125 +1,120 @@
-open Utils;
-
 type state = Clue.state;
 
-type formChange =
-  | ItemValue((string, string))
-  | ToggleFinal;
-
 type action =
-  | SubmitTurn
-  | ToggleHiddeninfo
-  | TurnFormChange(formChange);
-
-let initialize =
-    (categories: array(Clue.Category.t), playerNames: array(string)): state => {
-  let shuffledItemCombinations =
-    Clue.Category.getShuffledItemCombinations(categories);
-
-  // let truncatedItems =
-  let answer = shuffledItemCombinations[0];
-
-  let otherItems: array(Clue.item) =
-    Belt.Array.sliceToEnd(shuffledItemCombinations, 1)
-    |> Array.fold_left(
-         (acc, guess) => {
-           let itemArr = guess |> Clue.Guess.items |> Array.of_list;
-           Array.append(acc, itemArr);
-         },
-         [||],
-       );
-
-  let hidden =
-    otherItems
-    |> Belt.Array.slice(~offset=0, ~len=2)
-    |> Array.to_list
-    |> Clue.ItemSet.of_list;
-
-  let startingPlayers: array(Clue.Player.t) =
-    playerNames
-    |> Array.map((name) =>
-         ({name, lost: false, items: Clue.ItemSet.empty}: Clue.Player.t)
-       );
-
-  let playerItems = Belt.Array.sliceToEnd(otherItems, 2);
-
-  Belt.Array.forEachWithIndex(
-    playerItems,
-    (i, item) => {
-      let playerIndex = i mod Array.length(startingPlayers);
-      let player = startingPlayers[playerIndex];
-
-      startingPlayers[playerIndex] = {
-        ...player,
-        items: Clue.ItemSet.add(item, player.items),
-      };
-    },
-  );
-
-  let turnForm = Clue.Turn.getEmptyForm(categories);
-
-  {
-    answer,
-    startingPlayers,
-    categories,
-    hidden,
-    history: [],
-    turnForm,
-    showHiddenInfo: false,
-  };
-};
+  | NewGame
+  | SubmitAccusation
+  | UndoLastTurn
+  | ControlledPlayerInfoFormChange
+  | SubmitControlledPlayerInfo
+  | HiddenItemsCheck
+  | SubmitHiddenItems
+  | SubmitTurnOutcome(Clue.Turn.outcome)
+  | AccusationFormChange(Clue.Accusation.formChange);
 
 exception NotImplemented;
 
-let playerActionReducer =
-    (prevState: state, playerAction: Clue.Player.action): state => {
-  let {answer, history, startingPlayers}: state = prevState;
-  let turn =
-    Clue.Turn.performTurn(answer, history, startingPlayers, playerAction);
-  {...prevState, history: [turn, ...prevState.history]};
-};
-
-let turnFormChangeReducer = (prevState: state, change: formChange): state => {
-  let {turnForm}: state = prevState;
-
-  let turnForm =
-    switch (change) {
-    | ItemValue((key, value)) => {
-        ...turnForm,
-        values: StringMap.add(key, Some(value), turnForm.values),
+exception UnexepctedAccusationFormChange;
+let accusationFormChangeReducer =
+    (prevState: state, change: Clue.Accusation.formChange): state => {
+  let {turnPhase}: state = prevState;
+  let accusationForm =
+    switch (turnPhase, change) {
+    | (
+        Some(PendingAccusation(accusationForm)),
+        ItemValue({itemType: Location, name}),
+      ) => {
+        ...accusationForm,
+        guessChoice: {
+          ...accusationForm.guessChoice,
+          locationChoice: Some(name),
+        },
       }
-    | ToggleFinal => {...turnForm, final: !turnForm.final}
+    | (
+        Some(PendingAccusation(accusationForm)),
+        ItemValue({itemType: Weapon, name}),
+      ) => {
+        ...accusationForm,
+        guessChoice: {
+          ...accusationForm.guessChoice,
+          weaponChoice: Some(name),
+        },
+      }
+    | (
+        Some(PendingAccusation(accusationForm)),
+        ItemValue({itemType: Suspect, name}),
+      ) => {
+        ...accusationForm,
+        guessChoice: {
+          ...accusationForm.guessChoice,
+          suspectChoice: Some(name),
+        },
+      }
+    | (Some(PendingAccusation(accusationForm)), ToggleFinal) => {
+        ...accusationForm,
+        final: !accusationForm.final,
+      }
+    | (_, _) => raise(UnexepctedAccusationFormChange)
     };
 
-  {...prevState, turnForm};
+  {...prevState, turnPhase: Some(PendingAccusation(accusationForm))};
+};
+exception UnexpectedAccusationSubmission;
+exception InvalidAccusationSubmission;
+let submitAccusationForm = (prevState: state): state => {
+  let {turnPhase, history}: state = prevState;
+  open Clue.Turn;
+  let playerIndex = currentPlayerIndex(history);
+  let accusationOutput =
+    switch (turnPhase) {
+    | Some(PendingAccusation(accusationForm)) =>
+      Clue.Accusation.accusationFromForm(accusationForm, playerIndex)
+    | _ => raise(UnexpectedAccusationSubmission)
+    };
+  let accusation =
+    switch (accusationOutput) {
+    | Some(accusation) => accusation
+    | None => raise(InvalidAccusationSubmission)
+    };
+
+  {...prevState, turnPhase: Some(startingPendingOutcome(accusation))};
 };
 
-let turnFormSubmitReducer = (prevState: state): state => {
-  let {turnForm, answer, history, startingPlayers}: state = prevState;
-  let guess = Clue.Turn.getGuessFromForm(turnForm);
+exception UnexpectedTurnOutcomeSubmission;
+exception InvalidTurnOutcomeSubmission;
+let turnOutcomeSubmissionReducer = (prevState: state, outcome) => {
+  open Clue.Turn;
+  let {history, startingPlayers}: state = prevState;
+  let guess =
+    switch (prevState.turnPhase) {
+    | Some(PendingTurnOutcome(accusation)) => accusation.guess
+    | _ => raise(UnexpectedTurnOutcomeSubmission)
+    };
 
-  let turn =
-    turnForm.final
-      ? Clue.Turn.performFinalTurn(answer, history, startingPlayers, guess)
-      : Clue.Turn.performNormalTurn(history, startingPlayers, guess);
+  let players = currentPlayers(history, startingPlayers);
+  let playerIndex = currentPlayerIndex(history);
+  let turn = {guess, playerIndex, players, outcome};
 
-  let turnForm = Clue.Turn.getEmptyForm(prevState.categories);
+  let turnPhase = isGameEndingTurn(turn) ? None : startingPhase;
 
-  {...prevState, turnForm, history: [turn, ...history]};
+  {...prevState, turnPhase, history: [turn, ...history]};
 };
 
-let toggleHiddenInfo = (prevState: state) => {
-  ...prevState,
-  showHiddenInfo: !prevState.showHiddenInfo,
+let resetState = (prevState: state) => {
+  let history = [];
+  let turnPhase = Clue.Turn.startingPhase;
+  {...prevState, history, turnPhase};
 };
 
+exception ActionNotSupported;
 let reducer = (prevState: state, action: action): state => {
-  let phase = Clue.State.determinePhase(prevState);
+  let phase = Clue.State.determineGamePhase(prevState);
   switch (phase, action) {
-  | (Playing(_), SubmitTurn) => turnFormSubmitReducer(prevState)
-  | (Playing(_), TurnFormChange(change)) =>
-    turnFormChangeReducer(prevState, change)
-  | (_, ToggleHiddeninfo) => toggleHiddenInfo(prevState)
-  | (Ended(_), _) => prevState
+  | (Playing(_), SubmitAccusation) => submitAccusationForm(prevState)
+  | (Playing(_), AccusationFormChange(change)) =>
+    accusationFormChangeReducer(prevState, change)
+  | (Playing(_), SubmitTurnOutcome(outcome)) =>
+    turnOutcomeSubmissionReducer(prevState, outcome)
+  | (_, NewGame) => resetState(prevState)
+  | _ => raise(ActionNotSupported)
   };
 };

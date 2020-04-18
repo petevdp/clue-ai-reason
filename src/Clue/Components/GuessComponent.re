@@ -3,8 +3,10 @@ open ComponentUtils;
 
 [@react.component]
 let make = (~guess: Clue.Guess.t) => {
+  open Clue.Guess;
   let pairElementMap =
     guess
+    |> toStringMap
     |> StringMap.bindings
     |> Array.of_list
     |> Array.map(((categoryName, item)) => {

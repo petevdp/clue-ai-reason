@@ -1,9 +1,9 @@
 open ComponentUtils;
-module PhaseAlertComponent = {
+module GamePhaseAlertComponent = {
   [@react.component]
-  let make = (~phase, ~players: array(Clue.Player.t)) => {
+  let make = (~gamePhase, ~players: array(Clue.Player.t)) => {
     let (className, message) =
-      switch (phase) {
+      switch (gamePhase) {
       | Clue.State.Playing(index) => (
           "alert alert-primary",
           "Turn: " ++ players[index].name,
@@ -17,52 +17,45 @@ module PhaseAlertComponent = {
   };
 };
 
-module HiddenInfoToggle = {
-  [@react.component]
-  let make = (~showHiddenInfo, ~dispatch) => {
-    let (className, label) =
-      showHiddenInfo
-        ? ("btn btn-dark", "hide hidden info")
-        : ("btn btn-primary", "show hidden info");
-
-    let onClick = _ => dispatch(ClueReducer.ToggleHiddeninfo);
-
-    <button onClick className> {R.string(label)} </button>;
-  };
-};
-
 [@react.component]
 let make =
-    (~categories: array(Clue.Category.t), ~playerNames: array(string)) => {
+    (
+      ~categories: array(Clue.Category.t),
+      ~specifiedPlayers: array(Clue.Player.specifiedPlayer),
+    ) => {
   let (state, dispatch) =
     React.useReducer(
       ClueReducer.reducer,
-      ClueReducer.initialize(categories, playerNames),
+      Clue.State.initialize(categories, specifiedPlayers),
     );
 
-  let {answer, hidden, history, turnForm, showHiddenInfo}: ClueReducer.state = state;
+  let {history, turnPhase}: ClueReducer.state = state;
 
-  let hiddenItemElements =
-    hidden
-    |> Clue.ItemSet.to_array
-    |> Array.map(item => <li key=item> {R.string(item)} </li>);
-
-  let phase = Clue.State.determinePhase(state);
+  let gamePhase = Clue.State.determineGamePhase(state);
   let players = Clue.State.currentPlayers(state);
+  let currentPlayerIndex = Clue.Turn.currentPlayerIndex(history);
+
+  let formElement =
+    switch (turnPhase) {
+    | Some(PendingAccusation(accusationForm)) =>
+      <AccusationFormComponent
+        dispatch
+        categories
+        accusationForm
+        currentPlayerIndex
+      />
+    | Some(PendingTurnOutcome(accusation)) =>
+      <TurnOutcomeFormComponent accusation players dispatch />
+    | None =>
+      <button onClick={_ => dispatch(NewGame)}>
+        {R.string("New Game")}
+      </button>
+    };
 
   <article className="container">
-    <PhaseAlertComponent phase players />
-    <GuessFormComponent dispatch categories turnForm />
+    <GamePhaseAlertComponent gamePhase players />
+    formElement
     <TurnHistoryComponent history />
-    <PlayersComponent players showHiddenInfo />
-    <HiddenInfoToggle dispatch showHiddenInfo />
-    <div>
-      <h4> {R.string("Answer: ")} </h4>
-      {trueElseHide(showHiddenInfo, <GuessComponent guess=answer />)}
-    </div>
-    <div>
-      <h4> {R.string("Hidden")} </h4>
-      <ul> {trueElseHide(showHiddenInfo, R.array(hiddenItemElements))} </ul>
-    </div>
+    <PlayersComponent players />
   </article>;
 };

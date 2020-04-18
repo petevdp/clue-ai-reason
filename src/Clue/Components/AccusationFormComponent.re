@@ -1,7 +1,7 @@
 open Utils;
 open ComponentUtils;
 
-type turnFormValues = StringMap.t(option(Clue.item));
+type accusationFormValues = StringMap.t(option(Clue.item));
 
 module Style = {
   open Css;
@@ -22,32 +22,45 @@ let make =
     (
       ~dispatch: ClueReducer.action => unit,
       ~categories: array(Clue.Category.t),
-      ~turnForm,
+      ~accusationForm,
+      ~currentPlayerIndex,
     ) => {
-  let {values, final}: Clue.Turn.form = turnForm;
+  open Clue.Category;
+  let {guessChoice, final}: Clue.Accusation.form = accusationForm;
 
   let inputElements =
-    values
-    |> StringMap.bindings
-    |> Array.of_list
-    |> Array.map(((key, selectedItem)) => {
-         let category = Clue.Category.getByName(key, categories);
-         <CategoryInputComponent key category selectedItem dispatch />;
+    categories
+    |> Array.map(category => {
+         let selectedItem =
+           switch (category.itemType) {
+           | Location => guessChoice.locationChoice
+           | Weapon => guessChoice.weaponChoice
+           | Suspect => guessChoice.suspectChoice
+           };
+         <CategoryInputComponent
+           key={category.name}
+           category
+           selectedItem
+           dispatch
+         />;
        });
-  let canSubmit = Clue.Turn.canFormBeSubmitted(turnForm);
+
+  let canSubmit =
+    Clue.Accusation.accusationFromForm(accusationForm, currentPlayerIndex)
+    != None;
   let onClickSubmitTurn = e => {
     ReactEvent.Mouse.preventDefault(e);
-    dispatch(SubmitTurn);
+    dispatch(SubmitAccusation);
   };
 
   let onFinalCheckboxChange = _ =>
-    dispatch(ClueReducer.(TurnFormChange(ToggleFinal)));
+    dispatch(AccusationFormChange(ToggleFinal));
 
   <form className="form">
     <div className="container panel">
       <div className="row"> {R.array(inputElements)} </div>
     </div>
-    <div className="col-md-12">
+    <div className="col-]md-12">
       <button
         type_="button"
         disabled={!canSubmit}
