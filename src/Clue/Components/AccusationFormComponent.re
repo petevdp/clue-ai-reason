@@ -57,6 +57,7 @@ let make =
     dispatch(AccusationFormChange(ToggleFinal));
 
   <form className="form">
+    <h2> {R.string("Make an Accusation!")} </h2>
     <div className="container panel">
       <div className="row"> {R.array(inputElements)} </div>
     </div>

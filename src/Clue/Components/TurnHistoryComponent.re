@@ -1,23 +1,54 @@
+open ComponentUtils;
 open Utils;
 module TurnComponent = {
   open Clue.Turn;
   [@react.component]
   let make = (~turn, ~index) => {
-    let {playerIndex, guess, players, outcome} = turn;
+    let {playerIndex, players, turnAction} = turn;
     let player = players[playerIndex];
-    let outcomeMessage =
-      switch (outcome) {
-      | Normal(Held(index)) => "Held by " ++ players[index].name
-      | Normal(Unheld) => "Unheld"
-      | Final(Win) => "Won game!"
-      | Final(Lose) => "Lost game"
+    let normalAccusationMessage = "Normal Accusation";
+    let finalAccusationMessage = "Final Accusation";
+    let (actionMessage, outcomeMessage) =
+      switch (turnAction) {
+      | Accusation({outcome: Final(Win), accusation: {guess}}) => (
+          <span>
+            {str(finalAccusationMessage)}
+            <GuessComponent guess />
+          </span>,
+          str("Won game!"),
+        )
+      | Accusation({outcome: Final(Lose), accusation: {guess}}) => (
+          <span>
+            {str(finalAccusationMessage)}
+            <GuessComponent guess />
+          </span>,
+          str("Lost game!"),
+        )
+      | Accusation({
+          outcome: Normal(Held(heldPlayerIndex)),
+          accusation: {guess},
+        }) => (
+          <span>
+            {str(normalAccusationMessage)}
+            <GuessComponent guess />
+          </span>,
+          str("Held by " ++ players[heldPlayerIndex].name),
+        )
+      | Accusation({outcome: Normal(Unheld), accusation: {guess}}) => (
+          <span>
+            {str(normalAccusationMessage)}
+            <GuessComponent guess />
+          </span>,
+          str("Unheld"),
+        )
+      | ShowHidden => (str("Show Hidden"), <span />)
       };
 
     <tr>
       <th scope="row"> {index->string_of_int->React.string} </th>
       <td> {React.string(player.name)} </td>
-      <td> <GuessComponent guess /> </td>
-      <td> {React.string(outcomeMessage)} </td>
+      <td> actionMessage </td>
+      <td> outcomeMessage </td>
     </tr>;
   };
 };
@@ -45,7 +76,7 @@ let make = (~history: list(Clue.Turn.t)) => {
       <tr>
         <th scope="col"> {React.string("#")} </th>
         <th scope="col"> {React.string("Player")} </th>
-        <th scope="col"> {React.string("Guess")} </th>
+        <th scope="col"> {React.string("Action")} </th>
         <th scope="col"> {React.string("Outcome")} </th>
       </tr>
     </thead>

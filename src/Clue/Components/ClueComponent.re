@@ -22,11 +22,12 @@ let make =
     (
       ~categories: array(Clue.Category.t),
       ~specifiedPlayers: array(Clue.Player.specifiedPlayer),
+      ~numHiddenItems,
     ) => {
   let (state, dispatch) =
     React.useReducer(
       ClueReducer.reducer,
-      Clue.State.initialize(categories, specifiedPlayers),
+      Clue.State.initialize(categories, specifiedPlayers, numHiddenItems),
     );
 
   let {history, turnPhase}: ClueReducer.state = state;
@@ -37,6 +38,7 @@ let make =
 
   let formElement =
     switch (turnPhase) {
+    | Some(Start) => <TurnStartComponent dispatch />
     | Some(PendingAccusation(accusationForm)) =>
       <AccusationFormComponent
         dispatch
@@ -44,6 +46,18 @@ let make =
         accusationForm
         currentPlayerIndex
       />
+    | Some(PendingShowHidden(itemSelection)) =>
+      <HiddenItemsSubmissionComponent dispatch itemSelection categories />
+    | Some(PendingShowHiddenUncontrolled) =>
+      <div>
+        <div>
+          {str("Click to continue when you've shown the players your cards")}
+          <button
+            onClick={_ => dispatch(ChooseTurnAction(ShowHiddenChoice))}>
+            {str("Show Hidden")}
+          </button>
+        </div>
+      </div>
     | Some(PendingTurnOutcome(accusation)) =>
       <TurnOutcomeFormComponent accusation players dispatch />
     | None =>
@@ -57,5 +71,6 @@ let make =
     formElement
     <TurnHistoryComponent history />
     <PlayersComponent players />
+    <ControlPanelComponent dispatch history />
   </article>;
 };

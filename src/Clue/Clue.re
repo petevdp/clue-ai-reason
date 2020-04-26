@@ -16,10 +16,22 @@ module Item = {
   let compare = (a, b) => {
     String.compare(a.name, b.name);
   };
+
+  let typeAsString = itemType =>
+    switch (itemType) {
+    | Location => "Location"
+    | Weapon => "Weapon"
+    | Suspect => "Suspect"
+    };
 };
 type item = Item.t;
 
-module ItemSet = Set(Item);
+module ItemSet = {
+  include Set(Item);
+  let findByName = (name, t) => {
+    find_first(elt => {elt.name == name}, t);
+  };
+};
 module Guess = {
   type t = {
     location,
@@ -113,6 +125,8 @@ module Category = {
     itemNames: StringSet.t,
   };
 
+  let randomItem = t => t.itemNames |> StringSet.randomItem;
+
   let getByName = (name: string, arr: array(t)) => {
     switch (Belt.Array.getBy(arr, c => c.name == name)) {
     | Some(category) => category
@@ -205,30 +219,44 @@ module Turn = {
     | FinalOutcomeForm(finalOutcomeForm);
 
   type turnPhase =
+    | Start
     | PendingAccusation(Accusation.form)
+    | PendingShowHidden(array(option(item)))
+    | PendingShowHiddenUncontrolled
     | PendingTurnOutcome(accusation);
-  type t = {
-    guess,
-    playerIndex: index,
-    players: array(Player.t),
+
+  type accusationAction = {
     outcome,
+    accusation,
   };
 
-  let startingPhase = Some(PendingAccusation(Accusation.emptyForm));
+  type turnActionChoice =
+    | AccusationChoice
+    | ShowHiddenChoice;
+
+  type turnAction =
+    | Accusation(accusationAction)
+    | ShowHidden;
+
+  type t = {
+    playerIndex: index,
+    players: array(Player.t),
+    turnAction,
+  };
+
+  let startingPhase = Some(Start);
   let startingPendingOutcome = accusation => PendingTurnOutcome(accusation);
 
-  let winning = (t: t) =>
-    switch (t.outcome) {
-    | Final(Win) => true
+  let winning = t =>
+    switch (t.turnAction) {
+    | Accusation({outcome: Final(Win)}) => true
     | _ => false
     };
 
   exception InvalidGuessForm;
 
-  let last = (history: list(t)) => Belt.List.head(history);
-
   let currentPlayers = (history, startingPlayers) =>
-    switch (last(history)) {
+    switch (List.last(history)) {
     | None => startingPlayers
     | Some({players}) => players
     };
@@ -236,7 +264,7 @@ module Turn = {
   exception NoPlayersLeft;
 
   let currentPlayerIndex = history => {
-    switch (last(history)) {
+    switch (List.last(history)) {
     | None => 0
     | Some({playerIndex, players}) =>
       let activeIndexes = Player.activePlayerIndexes(players);
@@ -255,9 +283,8 @@ module Turn = {
 
   exception IncompleteTurn;
   let isGameEndingTurn = t => {
-    switch (t.outcome) {
-    | Normal(_) => false
-    | Final(outcome) =>
+    switch (t.turnAction) {
+    | Accusation({outcome: Final(outcome)}) =>
       let playersAlive =
         t.players
         |> Array.to_list
@@ -270,6 +297,7 @@ module Turn = {
       | (Lose, true) => true
       | (Lose, false) => false
       };
+    | _ => false
     };
   };
 };
@@ -281,6 +309,8 @@ module State = {
     startingPlayers: array(Player.t),
     categories: array(Category.t),
     controlledPlayerIndex: index,
+    hiddenItems: option(ItemSet.t),
+    numHiddenItems: int,
   };
 
   type gamePhase =
@@ -292,7 +322,7 @@ module State = {
   exception NotEnoughPlayers;
   let determineGamePhase = t => {
     let players = currentPlayers(t);
-    let lastTurn = Turn.last(t.history);
+    let lastTurn = List.last(t.history);
     let currentPlayerIndex = Turn.currentPlayerIndex(t.history);
     switch (Player.activePlayerIndexes(players), lastTurn) {
     | ([], _) => raise(NotEnoughPlayers)
@@ -308,6 +338,7 @@ module State = {
       (
         categories: array(Category.t),
         specifiedPlayers: array(Player.specifiedPlayer),
+        numHiddenItems,
       )
       : t => {
     let startingPlayers = Array.map(Player.initPlayer, specifiedPlayers);
@@ -328,7 +359,9 @@ module State = {
       turnPhase: Turn.startingPhase,
       categories,
       history: [],
+      hiddenItems: None,
       controlledPlayerIndex,
+      numHiddenItems,
     };
   };
 };
@@ -339,13 +372,31 @@ module Engine = {
     startingPlayers: array(Player.t),
     categories: array(Category.t),
   };
-  type t = reducedState => Guess.t;
+  type action = Player.action;
+  type t = reducedState => Player.action;
+
+  module Random = {
+    let t: t =
+      state => {
+        let final = Belt.Array.shuffle([|true, false|])[0];
+        let {categories} = state;
+        open Category;
+        let guess: Guess.t = {
+          location: categories |> getByName("location") |> randomItem,
+          weapon: categories |> getByName("weapon") |> randomItem,
+          suspect: categories |> getByName("suspect") |> randomItem,
+        };
+
+        final ? Player.FinalAction(guess) : Player.NormalAction(guess);
+      };
+  };
 };
 
 type state = State.t;
 
 let controlledPlayerName = "alice";
 let controlledPlayerItems = ItemSet.empty;
+let engine = Engine.Random.t;
 
 let startingPlayers =
   [|("alice", 4), ("bob", 4), ("carol", 4), ("dan", 4)|]

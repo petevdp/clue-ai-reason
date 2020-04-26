@@ -50,6 +50,7 @@ module List = {
   include List;
 
   let revIndex = (index, t) => List.length(t) - index;
+  let last = Belt.List.head;
 };
 
 module Set = (Type: Set.OrderedType) => {
@@ -59,9 +60,15 @@ module Set = (Type: Set.OrderedType) => {
   };
 
   let to_array = t => t |> elements |> Array.of_list;
+  let of_array = arr => arr |> Array.to_list |> of_list;
+
+  let find_first = (predecate: elt => bool, t) => {
+    t |> elements |> List.find(predecate);
+  };
 };
 
 module StringSet = Set(String);
 
 exception NotFound;
 exception NotImplemented;
+exception Impossible;

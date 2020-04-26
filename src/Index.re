@@ -6,6 +6,7 @@
 // ReasonReact when you might precisely be trying to learn it for the first
 ReactDOMRe.render(
   <ClueComponent
+    numHiddenItems=2
     categories=Clue.startingCategories
     specifiedPlayers=Clue.startingPlayers
   />,
