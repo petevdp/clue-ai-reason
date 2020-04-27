@@ -1,9 +1,10 @@
-type state = Clue.state;
+type state = Clue.State.t;
 
 type action =
   | NewGame
   | ChooseTurnAction(Clue.Turn.turnActionChoice)
   | SubmitAccusation
+  | EngineSubmitAccusation(Clue.Accusation.t)
   | UndoLastTurn
   | ControlledPlayerInfoFormChange
   | SubmitControlledPlayerInfo
@@ -110,6 +111,21 @@ let submitAccusationForm = (prevState: state): state => {
   {...prevState, turnPhase: Some(startingPendingOutcome(accusation))};
 };
 
+let submitEngineAccusation = (prevState, accusation: Clue.Accusation.t) => {
+  exception UnexpectedEngineAccusationSubmission;
+  let {turnPhase, history}: state = prevState;
+  let isEnginesTurn =
+    Clue.Turn.currentPlayerIndex(history) === accusation.playerIndex;
+  let turnPhase =
+    switch (turnPhase, isEnginesTurn) {
+    | (Some(PendingAccusation(_)), true) =>
+      Some(Clue.Turn.PendingTurnOutcome(accusation))
+    | (_, _) => raise(UnexpectedEngineAccusationSubmission)
+    };
+
+  {...prevState, turnPhase};
+};
+
 exception UnexpectedHiddenItemSelection;
 let selectHiddenItem = (prevState, name) => {
   let {turnPhase, categories}: state = prevState;
@@ -147,22 +163,29 @@ exception InvalidHiddenItemSubmission;
 exception UnexpectedHiddenItemSubmission;
 let hiddenItemSubmissionReducer = prevState => {
   let {turnPhase}: state = prevState;
-  switch (turnPhase, Helpers.isControlledPlayersTurn(prevState)) {
-  | (Some(PendingShowHidden(items)), true) =>
-    let items =
-      Array.map(
-        e =>
-          switch (e) {
-          | Some(item) => item
-          | None => raise(InvalidHiddenItemSubmission)
-          },
-        items,
-      )
-      |> Clue.ItemSet.of_array;
-    {...prevState, hiddenItems: Some(items), turnPhase: Some(Start)};
-  | (Some(PendingShowHidden(_)), false) => prevState
-  | (_, _) => raise(UnexpectedHiddenItemSubmission)
-  };
+  let statePostReveal =
+    switch (turnPhase, Helpers.isControlledPlayersTurn(prevState)) {
+    | (Some(PendingShowHidden(items)), true) =>
+      let items =
+        Array.map(
+          e =>
+            switch (e) {
+            | Some(item) => item
+            | None => raise(InvalidHiddenItemSubmission)
+            },
+          items,
+        )
+        |> Clue.ItemSet.of_array;
+      {...prevState, hiddenItems: Some(items)};
+    | (Some(PendingShowHidden(_)), false) => prevState
+    | (_, _) => raise(UnexpectedHiddenItemSubmission)
+    };
+  let {history}: state = statePostReveal;
+  let playerIndex = Clue.Turn.currentPlayerIndex(history);
+  let players = Clue.State.currentPlayers(statePostReveal);
+  let turnAction = Clue.Turn.ShowHidden;
+  let turn: Clue.Turn.t = {playerIndex, players, turnAction};
+  {...statePostReveal, history: [turn, ...history], turnPhase: Some(Start)};
 };
 
 exception UnexpectedTurnOutcomeSubmission;
@@ -194,7 +217,8 @@ let turnOutcomeSubmissionReducer = (prevState: state, outcome) => {
 let resetState = (prevState: state) => {
   let history = [];
   let turnPhase = Clue.Turn.startingPhase;
-  {...prevState, history, turnPhase};
+  let hiddenItems = None;
+  {...prevState, history, turnPhase, hiddenItems};
 };
 
 exception UndoWhenFirstTurn;
@@ -222,6 +246,8 @@ let reducer = (prevState: state, action: action): state => {
       hiddenItemSubmissionReducer(prevState)
     | (Playing(_), AccusationFormChange(change)) =>
       accusationFormChangeReducer(prevState, change)
+    | (Playing(_), EngineSubmitAccusation(accusation)) =>
+      submitEngineAccusation(prevState, accusation)
     | (Playing(_), SubmitTurnOutcome(outcome)) =>
       turnOutcomeSubmissionReducer(prevState, outcome)
     | (_, UndoLastTurn) => undoLastTurn(prevState)

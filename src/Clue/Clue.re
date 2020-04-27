@@ -31,6 +31,17 @@ module ItemSet = {
   let findByName = (name, t) => {
     find_first(elt => {elt.name == name}, t);
   };
+  let findByNameOpt = (name, t) => {
+    find_first_opt(elt => {elt.name == name}, t);
+  };
+
+  let names = t => {
+    fold(
+      (item, names) => StringSet.add(item.name, names),
+      t,
+      StringSet.empty,
+    );
+  };
 };
 module Guess = {
   type t = {
@@ -52,6 +63,18 @@ module Guess = {
       |> add("weapon", t.weapon)
       |> add("suspect", t.suspect)
     );
+
+  let compare = (a, b) => {
+    let comparisons = [
+      String.compare(a.location, b.location),
+      String.compare(a.weapon, b.weapon),
+      String.compare(a.suspect, b.suspect),
+    ];
+
+    try(comparisons |> List.filter(comp => comp != 0) |> List.hd) {
+    | Not_found => 0
+    };
+  };
 
   let emptyForm = {
     locationChoice: None,
@@ -78,10 +101,18 @@ module Guess = {
 };
 
 type guess = Guess.t;
+module GuessSet = {
+  include Set(Guess);
+};
 
 module Player = {
+  type controlledPlayerExtraInfo = {
+    items: ItemSet.t,
+    engineName: string,
+  };
+
   type playerItems =
-    | Controlled(ItemSet.t)
+    | Controlled(controlledPlayerExtraInfo)
     | Uncontrolled(int);
 
   type t = {
@@ -100,7 +131,7 @@ module Player = {
 
   let numItems = ({items}) => {
     switch (items) {
-    | Controlled(set) => ItemSet.cardinal(set)
+    | Controlled({items}) => ItemSet.cardinal(items)
     | Uncontrolled(num) => num
     };
   };
@@ -129,6 +160,13 @@ module Category = {
 
   let getByName = (name: string, arr: array(t)) => {
     switch (Belt.Array.getBy(arr, c => c.name == name)) {
+    | Some(category) => category
+    | None => raise(NotFound)
+    };
+  };
+
+  let get = (itemType: Item.itemType, arr: array(t)) => {
+    switch (Belt.Array.getBy(arr, c => c.itemType == itemType)) {
     | Some(category) => category
     | None => raise(NotFound)
     };
@@ -318,6 +356,16 @@ module State = {
     | Ended(index);
 
   let currentPlayers = t => Turn.currentPlayers(t.history, t.startingPlayers);
+  let isControlledPlayerTurn = ({history, controlledPlayerIndex}) => {
+    Turn.currentPlayerIndex(history) == controlledPlayerIndex;
+  };
+  let getControlledPlayerInfo = t => {
+    exception ControlledPlayerIndexIsUncontrolled;
+    switch (currentPlayers(t)[t.controlledPlayerIndex]) {
+    | {items: Player.Controlled(info)} => info
+    | _ => raise(ControlledPlayerIndexIsUncontrolled)
+    };
+  };
 
   exception NotEnoughPlayers;
   let determineGamePhase = t => {
@@ -366,72 +414,169 @@ module State = {
   };
 };
 
+type state = State.t;
 module Engine = {
   type reducedState = {
     history: list(Turn.t),
     startingPlayers: array(Player.t),
+    hiddenItems: option(ItemSet.t),
     categories: array(Category.t),
   };
   type action = Player.action;
-  type t = reducedState => Player.action;
+  type t = {
+    name: string,
+    f: reducedState => (Guess.t, bool),
+  };
+
+  let getReducedState = (fullState: State.t) => {
+    history: fullState.history,
+    startingPlayers: fullState.startingPlayers,
+    categories: fullState.categories,
+    hiddenItems: None,
+  };
+
+  let getEngineByName = (name, engines) =>
+    engines |> Array.to_list |> List.filter(e => e.name == name);
+
+  let useEngine = (engines: list(t), state: State.t, makeMove) => {
+    React.useEffect3(
+      () => {
+        let controlledPlayer = State.getControlledPlayerInfo(state);
+        let engine =
+          List.find(e => e.name == controlledPlayer.engineName, engines);
+        let isAccusationPhase =
+          switch (state.turnPhase) {
+          | Some(Turn.PendingAccusation(_)) => true
+          | _ => false
+          };
+
+        if (State.isControlledPlayerTurn(state) && isAccusationPhase) {
+          let _ =
+            Js.Global.setTimeout(
+              () => state |> getReducedState |> engine.f |> makeMove,
+              1,
+            );
+          ();
+        };
+        None;
+      },
+      (state, engines, makeMove),
+    );
+  };
 
   module Random = {
-    let t: t =
-      state => {
-        let final = Belt.Array.shuffle([|true, false|])[0];
-        let {categories} = state;
-        open Category;
-        let guess: Guess.t = {
-          location: categories |> getByName("location") |> randomItem,
-          weapon: categories |> getByName("weapon") |> randomItem,
-          suspect: categories |> getByName("suspect") |> randomItem,
+    let f = state => {
+      let {categories} = state;
+      let guess: Guess.t =
+        Category.{
+          location: categories |> getByName("locations") |> randomItem,
+          weapon: categories |> getByName("weapons") |> randomItem,
+          suspect: categories |> getByName("suspects") |> randomItem,
         };
 
-        final ? Player.FinalAction(guess) : Player.NormalAction(guess);
+      (guess, true);
+    };
+
+    let engine = {name: "random", f};
+  };
+
+  module V1 = {
+    let getAllPossibleGuesses = categories => {
+      let guesses = ref(GuessSet.empty);
+
+      let locations = Category.get(Location, categories).itemNames;
+      let weapons = Category.get(Location, categories).itemNames;
+      let suspects = Category.get(Suspect, categories).itemNames;
+      StringSet.(
+        locations
+        |> iter(location => {
+             weapons
+             |> iter(weapon => {
+                  suspects
+                  |> iter(suspect => {
+                       let guess: Guess.t = {location, weapon, suspect};
+                       guesses := GuessSet.add(guess, guesses^);
+                     })
+                })
+           })
+      );
+
+      guesses^;
+    };
+
+    let filterBasedOnHidden = (hiddenItems, allGuesses) =>
+      switch (hiddenItems) {
+      | Some(items) =>
+        let itemNames = ItemSet.names(items);
+        GuessSet.filter(
+          ({location, weapon, suspect}) => {
+            open StringSet;
+            let itemsInGuess =
+              mem(location, itemNames)
+              || mem(weapon, itemNames)
+              || mem(suspect, itemNames);
+
+            !itemsInGuess;
+          },
+          allGuesses,
+        );
+      | None => allGuesses
       };
+
+    let filterBasedOnHistory = (history, guesses) => {
+      let accusationActions =
+        history
+        |> List.filter((turn: Turn.t) =>
+             switch (turn.turnAction) {
+             | Accusation(_) => true
+             | _ => false
+             }
+           )
+        |> List.map((turn: Turn.t) => {
+             switch (turn.turnAction) {
+             | Accusation(accusation) => accusation
+             | _ => raise(Impossible)
+             }
+           });
+      let guesses = ref(guesses);
+      List.iter(
+        ({accusation, outcome}: Turn.accusationAction) => {
+          let {guess}: Accusation.t = accusation;
+          guesses :=
+            (
+              switch (outcome) {
+              | Normal(Held(_))
+              | Final(Lose) => GuessSet.remove(guess, guesses^)
+              | Normal(Unheld)
+              | Final(Win) => guesses^
+              }
+            );
+        },
+        accusationActions,
+      );
+
+      guesses^;
+    };
+
+    let f = state => {
+      let {categories, hiddenItems, history} = state;
+      let allGuesses = getAllPossibleGuesses(categories);
+      let filtered =
+        allGuesses
+        |> filterBasedOnHidden(hiddenItems)
+        |> filterBasedOnHistory(history);
+
+      Js.log("all");
+      Js.log(allGuesses |> GuessSet.to_array);
+      Js.log(GuessSet.cardinal(allGuesses));
+      Js.log("filtered");
+      Js.log(filtered |> GuessSet.to_array);
+      Js.log(GuessSet.cardinal(filtered));
+      Js.log("--------");
+      let chosen = GuessSet.choose(filtered);
+      (chosen, false);
+    };
+
+    let engine = {name: "v1", f};
   };
 };
-
-type state = State.t;
-
-let controlledPlayerName = "alice";
-let controlledPlayerItems = ItemSet.empty;
-let engine = Engine.Random.t;
-
-let startingPlayers =
-  [|("alice", 4), ("bob", 4), ("carol", 4), ("dan", 4)|]
-  |> Array.map(((name, numItems)) => {
-       let playerItems =
-         name == controlledPlayerName
-           ? Player.Controlled(controlledPlayerItems)
-           : Player.Uncontrolled(numItems);
-       (name, playerItems);
-     });
-
-let startingCategories: array(Category.t) = [|
-  {
-    name: "locations",
-    itemType: Location,
-    itemNames:
-      StringSet.of_list([
-        "kitchen",
-        "living room",
-        "shed",
-        "driveway",
-        // "master bedroom",
-        // "bathroom",
-      ]),
-  },
-  {
-    name: "weapons",
-    itemType: Weapon,
-    itemNames:
-      StringSet.of_list(["hammer", "chainsaw", "butcher knife", "pencil"]),
-  },
-  {
-    name: "suspects",
-    itemType: Suspect,
-    itemNames:
-      StringSet.of_list(["dirty harry", "cool hand luke", "ted cruz", "OJ"]),
-  },
-|];

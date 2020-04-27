@@ -101,6 +101,8 @@ let make =
         />
       : R.null;
 
+  let onClickSubmit = _ => dispatch(ClueReducer.SubmitHiddenItems);
+
   <div>
     searchElement
     {str(" - ")}
@@ -108,5 +110,11 @@ let make =
     {str(" - ")}
     {selectionsLeft |> string_of_int |> str}
     {str(" left")}
+    <button
+      className="btn btn-primary"
+      disabled={selectionsLeft != 0}
+      onClick=onClickSubmit>
+      {str("Submit")}
+    </button>
   </div>;
 };

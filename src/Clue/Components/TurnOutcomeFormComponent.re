@@ -73,5 +73,8 @@ let make = (~accusation: Clue.Accusation.t, ~players, ~dispatch) => {
       ? <FinalOutcomeFormComponent dispatch />
       : <NormalOutcomeFormComponent players dispatch />;
 
-  <section className="card"> formElement </section>;
+  <section className="card">
+    <GuessComponent guess={accusation.guess} />
+    formElement
+  </section>;
 };
