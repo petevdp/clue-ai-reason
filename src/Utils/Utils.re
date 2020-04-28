@@ -51,6 +51,7 @@ module List = {
 
   let revIndex = (index, t) => List.length(t) - index;
   let last = Belt.List.head;
+  let zipWithIndex = t => List.mapi((i, a) => (i, a), t);
 };
 
 module Set = (Type: Set.OrderedType) => {

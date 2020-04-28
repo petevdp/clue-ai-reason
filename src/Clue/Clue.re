@@ -65,14 +65,17 @@ module Guess = {
     );
 
   let compare = (a, b) => {
-    let comparisons = [
-      String.compare(a.location, b.location),
-      String.compare(a.weapon, b.weapon),
-      String.compare(a.suspect, b.suspect),
-    ];
+    let comparisons =
+      [
+        String.compare(a.location, b.location),
+        String.compare(a.weapon, b.weapon),
+        String.compare(a.suspect, b.suspect),
+      ]
+      |> List.filter(comp => comp != 0);
 
-    try(comparisons |> List.filter(comp => comp != 0) |> List.hd) {
-    | Not_found => 0
+    switch (Belt.List.head(comparisons)) {
+    | Some(c) => c
+    | None => 0
     };
   };
 
@@ -106,13 +109,8 @@ module GuessSet = {
 };
 
 module Player = {
-  type controlledPlayerExtraInfo = {
-    items: ItemSet.t,
-    engineName: string,
-  };
-
   type playerItems =
-    | Controlled(controlledPlayerExtraInfo)
+    | Controlled(ItemSet.t)
     | Uncontrolled(int);
 
   type t = {
@@ -129,9 +127,16 @@ module Player = {
     items: playerItems,
   };
 
+  exception NotControlledPlayer;
+  let controlledPlayerInfo = t =>
+    switch (t.items) {
+    | Controlled(info) => info
+    | Uncontrolled(_) => raise(NotControlledPlayer)
+    };
+
   let numItems = ({items}) => {
     switch (items) {
-    | Controlled({items}) => ItemSet.cardinal(items)
+    | Controlled(items) => ItemSet.cardinal(items)
     | Uncontrolled(num) => num
     };
   };
@@ -319,6 +324,17 @@ module Turn = {
     };
   };
 
+  let controlledPlayer = (history, startingPlayers) => {
+    currentPlayers(history, startingPlayers)
+    |> Array.to_list
+    |> List.find((p: Player.t) =>
+         switch (p.items) {
+         | Player.Controlled(_) => true
+         | Player.Uncontrolled(_) => false
+         }
+       );
+  };
+
   exception IncompleteTurn;
   let isGameEndingTurn = t => {
     switch (t.turnAction) {
@@ -358,13 +374,6 @@ module State = {
   let currentPlayers = t => Turn.currentPlayers(t.history, t.startingPlayers);
   let isControlledPlayerTurn = ({history, controlledPlayerIndex}) => {
     Turn.currentPlayerIndex(history) == controlledPlayerIndex;
-  };
-  let getControlledPlayerInfo = t => {
-    exception ControlledPlayerIndexIsUncontrolled;
-    switch (currentPlayers(t)[t.controlledPlayerIndex]) {
-    | {items: Player.Controlled(info)} => info
-    | _ => raise(ControlledPlayerIndexIsUncontrolled)
-    };
   };
 
   exception NotEnoughPlayers;
@@ -421,6 +430,7 @@ module Engine = {
     startingPlayers: array(Player.t),
     hiddenItems: option(ItemSet.t),
     categories: array(Category.t),
+    controlledPlayerIndex: int,
   };
   type action = Player.action;
   type t = {
@@ -433,34 +443,46 @@ module Engine = {
     startingPlayers: fullState.startingPlayers,
     categories: fullState.categories,
     hiddenItems: None,
+    controlledPlayerIndex: fullState.controlledPlayerIndex,
+  };
+
+  let getControlledPlayerInfo = t => {
+    exception ControlledPlayerIndexIsUncontrolled;
+    let {history, startingPlayers} = t;
+    let currentPlayers = Turn.currentPlayers(history, startingPlayers);
+    switch (currentPlayers[t.controlledPlayerIndex]) {
+    | {items: Player.Controlled(info)} => info
+    | _ => raise(ControlledPlayerIndexIsUncontrolled)
+    };
+  };
+
+  let controlledItems = t => {
+    getControlledPlayerInfo(t);
   };
 
   let getEngineByName = (name, engines) =>
     engines |> Array.to_list |> List.filter(e => e.name == name);
 
-  let useEngine = (engines: list(t), state: State.t, makeMove) => {
+  let useEngine = (engine, fullState: State.t, makeMove) => {
     React.useEffect3(
       () => {
-        let controlledPlayer = State.getControlledPlayerInfo(state);
-        let engine =
-          List.find(e => e.name == controlledPlayer.engineName, engines);
         let isAccusationPhase =
-          switch (state.turnPhase) {
+          switch (fullState.turnPhase) {
           | Some(Turn.PendingAccusation(_)) => true
           | _ => false
           };
 
-        if (State.isControlledPlayerTurn(state) && isAccusationPhase) {
+        if (State.isControlledPlayerTurn(fullState) && isAccusationPhase) {
           let _ =
             Js.Global.setTimeout(
-              () => state |> getReducedState |> engine.f |> makeMove,
+              () => fullState |> getReducedState |> engine.f |> makeMove,
               1,
             );
           ();
         };
         None;
       },
-      (state, engines, makeMove),
+      (fullState, engine, makeMove),
     );
   };
 
@@ -504,24 +526,21 @@ module Engine = {
       guesses^;
     };
 
-    let filterBasedOnHidden = (hiddenItems, allGuesses) =>
-      switch (hiddenItems) {
-      | Some(items) =>
-        let itemNames = ItemSet.names(items);
-        GuessSet.filter(
-          ({location, weapon, suspect}) => {
-            open StringSet;
-            let itemsInGuess =
-              mem(location, itemNames)
-              || mem(weapon, itemNames)
-              || mem(suspect, itemNames);
+    let filterBasedOnItems = (items, allGuesses) => {
+      let itemNames = ItemSet.names(items);
+      GuessSet.filter(
+        ({location, weapon, suspect}) => {
+          open StringSet;
+          let itemsInGuess =
+            mem(location, itemNames)
+            || mem(weapon, itemNames)
+            || mem(suspect, itemNames);
 
-            !itemsInGuess;
-          },
-          allGuesses,
-        );
-      | None => allGuesses
-      };
+          !itemsInGuess;
+        },
+        allGuesses,
+      );
+    };
 
     let filterBasedOnHistory = (history, guesses) => {
       let accusationActions =
@@ -538,15 +557,20 @@ module Engine = {
              | _ => raise(Impossible)
              }
            });
+
       let guesses = ref(guesses);
       List.iter(
         ({accusation, outcome}: Turn.accusationAction) => {
+          Js.log(GuessSet.cardinal(guesses^));
           let {guess}: Accusation.t = accusation;
           guesses :=
             (
               switch (outcome) {
               | Normal(Held(_))
-              | Final(Lose) => GuessSet.remove(guess, guesses^)
+              | Final(Lose) =>
+                Js.log("removing");
+                Js.log(guess);
+                GuessSet.remove(guess, guesses^);
               | Normal(Unheld)
               | Final(Win) => guesses^
               }
@@ -559,11 +583,25 @@ module Engine = {
     };
 
     let f = state => {
-      let {categories, hiddenItems, history} = state;
+      let {categories, hiddenItems, history, startingPlayers} = state;
       let allGuesses = getAllPossibleGuesses(categories);
+      let hiddenItems =
+        switch (hiddenItems) {
+        | Some(items) => items
+        | None => ItemSet.empty
+        };
+
+      let player = Turn.controlledPlayer(history, startingPlayers);
+      let playerItems =
+        switch (player.items) {
+        | Controlled(items) => items
+        | Uncontrolled(_) => raise(Impossible)
+        };
+
       let filtered =
         allGuesses
-        |> filterBasedOnHidden(hiddenItems)
+        |> filterBasedOnItems(hiddenItems)
+        |> filterBasedOnItems(playerItems)
         |> filterBasedOnHistory(history);
 
       Js.log("all");
@@ -574,7 +612,7 @@ module Engine = {
       Js.log(GuessSet.cardinal(filtered));
       Js.log("--------");
       let chosen = GuessSet.choose(filtered);
-      (chosen, false);
+      (chosen, GuessSet.cardinal(filtered) == 1);
     };
 
     let engine = {name: "v1", f};

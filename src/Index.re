@@ -5,7 +5,7 @@
 open Clue;
 open Utils;
 
-let engines = Engine.[Random.engine, V1.engine];
+let engine = Engine.V1.engine;
 let selectedEngine = "v1";
 
 let controlledPlayerName = "alice";
@@ -16,10 +16,7 @@ let startingPlayers =
   |> Array.map(((name, numItems)) => {
        let playerItems =
          name == controlledPlayerName
-           ? Player.Controlled({
-               items: controlledPlayerItems,
-               engineName: selectedEngine,
-             })
+           ? Player.Controlled(controlledPlayerItems)
            : Player.Uncontrolled(numItems);
        (name, playerItems);
      });
@@ -59,7 +56,7 @@ ReactDOMRe.render(
     numHiddenItems=2
     categories=startingCategories
     specifiedPlayers=startingPlayers
-    engines
+    engine
   />,
   document##getElementById("react-root"),
 );
