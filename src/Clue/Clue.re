@@ -134,6 +134,13 @@ module Player = {
     | Uncontrolled(_) => raise(NotControlledPlayer)
     };
 
+  let isControlled = t => {
+    switch (t.items) {
+    | Controlled(_) => true
+    | Uncontrolled(_) => false
+    };
+  };
+
   let numItems = ({items}) => {
     switch (items) {
     | Controlled(items) => ItemSet.cardinal(items)
@@ -275,10 +282,12 @@ module Turn = {
 
   type turnActionChoice =
     | AccusationChoice
+    | NoActionChoice
     | ShowHiddenChoice;
 
   type turnAction =
     | Accusation(accusationAction)
+    | NoAction
     | ShowHidden;
 
   type t = {
@@ -333,6 +342,10 @@ module Turn = {
          | Player.Uncontrolled(_) => false
          }
        );
+  };
+
+  let currentPlayer = (history, startingPlayers) => {
+    currentPlayers(history, startingPlayers)[currentPlayerIndex(history)];
   };
 
   exception IncompleteTurn;

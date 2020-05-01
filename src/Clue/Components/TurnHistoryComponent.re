@@ -42,9 +42,12 @@ module TurnComponent = {
           str("Unheld"),
         )
       | ShowHidden => (str("Show Hidden"), <span />)
+      | NoAction => (str("No Action"), <span />)
       };
 
-    <tr>
+    let rowStyle = Clue.Player.isControlled(player) ? "table-info" : "";
+
+    <tr className=rowStyle>
       <th scope="row"> {index->string_of_int->React.string} </th>
       <td> {React.string(player.name)} </td>
       <td> actionMessage </td>

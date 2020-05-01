@@ -26,23 +26,45 @@ module Helpers = {
 
 exception UnexpectedChooseTurnActionType;
 let chooseTurnActionType = (prevState, actionType) => {
-  let {turnPhase, numHiddenItems}: state = prevState;
-  let turnPhase =
+  open Clue.Turn;
+  let {turnPhase, numHiddenItems, history, startingPlayers}: state = prevState;
+  let (turnPhase, nextTurn) =
     switch (
       turnPhase,
       actionType,
       Helpers.isControlledPlayersTurn(prevState),
     ) {
-    | (Some(Start), Clue.Turn.AccusationChoice, _) =>
-      Clue.Turn.PendingAccusation(Clue.Accusation.emptyForm)
-    | (Some(Start), Clue.Turn.ShowHiddenChoice, true) =>
-      PendingShowHidden(Array.make(numHiddenItems, None))
-    | (Some(Start), Clue.Turn.ShowHiddenChoice, false) =>
-      PendingShowHiddenUncontrolled
+    | (Some(Start), Clue.Turn.AccusationChoice, _) => (
+        Clue.Turn.PendingAccusation(Clue.Accusation.emptyForm),
+        None,
+      )
+    | (Some(Start), Clue.Turn.ShowHiddenChoice, true) => (
+        PendingShowHidden(Array.make(numHiddenItems, None)),
+        None,
+      )
+    | (Some(Start), Clue.Turn.ShowHiddenChoice, false) => (
+        PendingShowHiddenUncontrolled,
+        None,
+      )
+    | (Some(Start), Clue.Turn.NoActionChoice, _) =>
+      let players = Clue.Turn.currentPlayers(history, startingPlayers);
+      let currentPlayerIndex = Clue.Turn.currentPlayerIndex(history);
+      (
+        Start,
+        Some({
+          players,
+          turnAction: NoAction,
+          playerIndex: currentPlayerIndex,
+        }),
+      );
     | _ => raise(UnexpectedChooseTurnActionType)
     };
-
-  {...prevState, turnPhase: Some(turnPhase)};
+  let history =
+    switch (nextTurn) {
+    | Some(turn) => [turn, ...history]
+    | None => history
+    };
+  {...prevState, history, turnPhase: Some(turnPhase)};
 };
 
 exception UnexepctedAccusationFormChange;

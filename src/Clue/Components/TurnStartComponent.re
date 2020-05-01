@@ -14,5 +14,10 @@ let make = (~dispatch) => {
       onClick={_ => dispatch(ClueReducer.ChooseTurnAction(ShowHiddenChoice))}>
       {str("Show Hidden")}
     </button>
+    <button
+      className="btn btn-primary"
+      onClick={_ => dispatch(ClueReducer.ChooseTurnAction(NoActionChoice))}>
+      {str("No Action")}
+    </button>
   </div>;
 };

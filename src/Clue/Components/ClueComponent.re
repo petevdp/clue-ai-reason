@@ -4,14 +4,18 @@ module GamePhaseAlertComponent = {
   let make = (~gamePhase, ~players: array(Clue.Player.t)) => {
     let (className, message) =
       switch (gamePhase) {
-      | Clue.State.Playing(index) => (
-          "alert alert-primary",
-          "Turn: " ++ players[index].name,
-        )
-      | Clue.State.Ended(index) => (
-          "alert alert-success",
-          "Game Over! " ++ players[index].name ++ " is the winner!",
-        )
+      | Clue.State.Playing(index) =>
+        let player = players[index];
+        let alertClass =
+          Clue.Player.isControlled(player)
+            ? "alert alert-info" : "alert alert-primary";
+        (alertClass, "Turn: " ++ players[index].name);
+      | Clue.State.Ended(index) =>
+        let player = players[index];
+        let alertClass =
+          Clue.Player.isControlled(player)
+            ? "alert alert-success" : "alert alert-error";
+        (alertClass, "Game Over! " ++ player.name ++ " is the winner!");
       };
     <div className> {R.string(message)} </div>;
   };
@@ -78,9 +82,9 @@ let make =
 
   <article className="container">
     <GamePhaseAlertComponent gamePhase players />
+    <ControlPanelComponent dispatch history />
     formElement
     <TurnHistoryComponent history />
     <PlayersComponent players />
-    <ControlPanelComponent dispatch history />
   </article>;
 };
