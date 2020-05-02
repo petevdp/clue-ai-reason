@@ -26,7 +26,7 @@ let make =
     (
       ~categories: array(Clue.Category.t),
       ~specifiedPlayers: array(Clue.Player.specifiedPlayer),
-      ~engine: Clue.Engine.t,
+      ~engine: Engine.t,
       ~numHiddenItems,
     ) => {
   let (state, dispatch) =
@@ -34,7 +34,7 @@ let make =
       ClueReducer.reducer,
       Clue.State.initialize(categories, specifiedPlayers, numHiddenItems),
     );
-  Clue.Engine.useEngine(engine, state, ((guess, final)) =>
+  Engine.useEngine(engine, state, ((guess, final)) =>
     dispatch(
       ClueReducer.EngineSubmitAccusation({
         guess,
